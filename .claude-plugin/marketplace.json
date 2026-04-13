@@ -1,7 +1,7 @@
 {
   "name": "agent-plugins",
   "owner": {
-    "name": "Niklas-Flaig"
+    "name": "wuffig-coding-solutions"
   },
   "metadata": {
     "description": "Personal Claude Code plugin registry",
@@ -17,7 +17,7 @@
       },
       "source": {
         "source": "git-subdir",
-        "url": "Niklas-Flaig/protocollant",
+        "url": "wuffig-coding-solutions/protocollant",
         "path": ".",
         "ref": "main",
         "sha": ""
@@ -32,7 +32,7 @@
       },
       "source": {
         "source": "git-subdir",
-        "url": "Niklas-Flaig/mem0-plugin",
+        "url": "wuffig-coding-solutions/mem0-plugin",
         "path": ".",
         "ref": "main",
         "sha": ""
