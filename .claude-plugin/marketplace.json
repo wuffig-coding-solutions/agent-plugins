@@ -17,7 +17,7 @@
       },
       "source": {
         "source": "git-subdir",
-        "url": "wuffig-coding-solutions/protocollant",
+        "url": "https://github.com/wuffig-coding-solutions/protocollant.git",
         "path": ".",
         "ref": "main",
         "sha": "8a20c0b9096dc8da51e131f37ae0c1c850df7411"
@@ -32,7 +32,7 @@
       },
       "source": {
         "source": "git-subdir",
-        "url": "wuffig-coding-solutions/mem0-plugin",
+        "url": "https://github.com/wuffig-coding-solutions/mem0-plugin.git",
         "path": ".",
         "ref": "main",
         "sha": "b76ee10bcadc83bfac95d6c80a4e7c6a752730a1"

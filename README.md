@@ -62,7 +62,7 @@ Plugin repo push to main
   "author": { "name": "Niklas-Flaig" },
   "source": {
     "source": "git-subdir",
-    "url": "wuffig-coding-solutions/<plugin-name>",
+    "url": "https://github.com/wuffig-coding-solutions/<plugin-name>.git",
     "path": ".",
     "ref": "main",
     "sha": ""

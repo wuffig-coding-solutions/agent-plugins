@@ -17,7 +17,13 @@ const updatedPlugin = process.env.UPDATED_PLUGIN;
 const updatedSha = process.env.UPDATED_SHA;
 const ghToken = process.env.GH_TOKEN;
 
-async function getLatestSha(repo, ref = "main") {
+function repoSlug(url) {
+  const match = url.match(/github\.com\/([^/]+\/[^/.]+?)(?:\.git)?$/);
+  return match ? match[1] : url;
+}
+
+async function getLatestSha(url, ref = "main") {
+  const repo = repoSlug(url);
   const res = await fetch(
     `https://api.github.com/repos/${repo}/commits/${ref}`,
     {
