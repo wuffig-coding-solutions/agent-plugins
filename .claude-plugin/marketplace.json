@@ -22,6 +22,21 @@
         "ref": "main",
         "sha": ""
       }
+    },
+    {
+      "name": "mem0",
+      "description": "Persistent memory for Claude Code via mem0. Fully implicit — no manual commands.",
+      "version": "0.5.0",
+      "author": {
+        "name": "Niklas-Flaig"
+      },
+      "source": {
+        "source": "git-subdir",
+        "url": "Niklas-Flaig/mem0-plugin",
+        "path": ".",
+        "ref": "main",
+        "sha": ""
+      }
     }
   ]
 }
