@@ -1,0 +1,33 @@
+name: Sync plugin SHAs
+
+on:
+  # Triggered by plugin repos when they push to main
+  repository_dispatch:
+    types: [plugin-updated]
+  # Manual trigger to resync all shas at once
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync SHAs
+        run: bun .github/scripts/sync-shas.js
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Set by repository_dispatch payload, empty on manual run
+          UPDATED_PLUGIN: ${{ github.event.client_payload.plugin }}
+          UPDATED_SHA: ${{ github.event.client_payload.sha }}
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet && echo "No changes" && exit 0
+          git add .claude-plugin/marketplace.json
+          git commit -m "chore: bump ${{ github.event.client_payload.plugin || 'all plugins' }} sha"
+          git push

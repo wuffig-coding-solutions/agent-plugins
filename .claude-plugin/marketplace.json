@@ -1,0 +1,27 @@
+{
+  "name": "agent-plugins",
+  "owner": {
+    "name": "Niklas-Flaig"
+  },
+  "metadata": {
+    "description": "Personal Claude Code plugin registry",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "protocollant",
+      "description": "Automatically maintains a structured knowledge base in docs/ and keeps CLAUDE.md in sync.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Niklas-Flaig"
+      },
+      "source": {
+        "source": "git-subdir",
+        "url": "Niklas-Flaig/protocollant",
+        "path": ".",
+        "ref": "main",
+        "sha": ""
+      }
+    }
+  ]
+}
