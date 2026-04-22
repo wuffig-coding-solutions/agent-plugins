@@ -1,0 +1,8 @@
+{
+  "name": "website-commenter",
+  "description": "Browser extension bridge that lets you comment on DOM elements and send feedback directly to Claude Code. Starts an HTTP bridge server automatically on session start.",
+  "version": "1.0.0",
+  "author": { "name": "Niklas-Flaig" },
+  "repository": "https://github.com/wuffig-coding-solutions/website-commenter",
+  "license": "MIT"
+}

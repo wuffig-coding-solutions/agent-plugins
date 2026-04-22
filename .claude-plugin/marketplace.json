@@ -47,8 +47,8 @@
       },
       "source": {
         "source": "git-subdir",
-        "url": "https://github.com/wuffig-coding-solutions/website-commenter.git",
-        "path": ".",
+        "url": "https://github.com/wuffig-coding-solutions/agent-plugins.git",
+        "path": "plugins/website-commenter",
         "ref": "main",
         "sha": ""
       }
