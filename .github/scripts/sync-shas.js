@@ -10,7 +10,7 @@
 
 import { readFileSync, writeFileSync } from "fs";
 
-const MARKETPLACE_PATH = "marketplace.json";
+const MARKETPLACE_PATH = ".claude-plugin/marketplace.json";
 const marketplace = JSON.parse(readFileSync(MARKETPLACE_PATH, "utf8"));
 
 const updatedPlugin = process.env.UPDATED_PLUGIN;
