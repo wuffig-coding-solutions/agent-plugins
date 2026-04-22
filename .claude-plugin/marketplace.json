@@ -50,7 +50,7 @@
         "url": "https://github.com/wuffig-coding-solutions/agent-plugins.git",
         "path": "plugins/website-commenter",
         "ref": "main",
-        "sha": ""
+        "sha": "0c760601e56caedbc31922ed2a1c258fb9220df2"
       }
     }
   ]
