@@ -9,7 +9,7 @@ beforeAll(async () => {
     ["bun", import.meta.dir + "/server.ts", "--port", String(TEST_PORT)],
     {
       stdio: ["ignore", "ignore", "ignore"],
-      env: { ...process.env, WC_NO_STATE_FILE: "1" },
+      env: { ...process.env, WC_NO_STATE_FILE: "1", WC_NO_MCP: "1" },
     },
   );
   await Bun.sleep(500); // wait for server to bind
