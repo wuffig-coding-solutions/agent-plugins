@@ -1,68 +1,64 @@
 #!/usr/bin/env bun
-import { existsSync } from "node:fs";
-import { execSync } from "node:child_process";
+// plugins/website-commenter/hooks/session-start.js
+//
+// Runs at each Claude Code session start. Does two things:
+//   1. Writes ~/.claude/wc-start.sh so /website-commenter skill can start the
+//      bridge without knowing the plugin's cache install path.
+//   2. Checks if bridge is already running and surfaces it as additionalContext.
+
 import fs from "node:fs";
 
 // Consume stdin (required by hook contract)
-let input = {};
 try {
-  input = JSON.parse(fs.readFileSync(0, "utf8"));
+  JSON.parse(fs.readFileSync(0, "utf8"));
 } catch {}
 
 const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
-if (!pluginRoot) process.exit(0);
+const home = process.env.HOME;
 
-// Install deps on first run (bun install is fast and idempotent)
-if (!existsSync(`${pluginRoot}/node_modules`)) {
+// ── 1. Write launcher ─────────────────────────────────────────────────────────
+
+if (pluginRoot && home) {
+  const launcher = `#!/usr/bin/env bash\nexec bun "${pluginRoot}/bridge/server.ts" "$@"\n`;
   try {
-    execSync("bun install --frozen-lockfile", {
-      cwd: pluginRoot,
-      stdio: "ignore",
-    });
-  } catch {
-    process.exit(0);
+    fs.writeFileSync(`${home}/.claude/wc-start.sh`, launcher, { mode: 0o755 });
+  } catch (e) {
+    console.error("[website-commenter] Failed to write launcher:", e);
   }
 }
 
-// Check if bridge server is already running
-let bridgeRunning = false;
-try {
-  const res = await fetch("http://localhost:8789/health", {
-    signal: AbortSignal.timeout(1000),
-  });
-  bridgeRunning = res.ok;
-} catch {}
+// ── 2. Check bridge status ────────────────────────────────────────────────────
 
-if (!bridgeRunning) {
-  // Spawn bridge server as a detached background process
-  Bun.spawn(["bun", "run", `${pluginRoot}/bridge/server.ts`], {
-    cwd: pluginRoot,
-    stdio: ["ignore", "ignore", "ignore"],
-    detached: true,
-  });
-  // Brief pause to let the HTTP listener bind
-  await Bun.sleep(300);
+const STATE_FILE = "/tmp/claude-wc-bridge.json";
+let additionalContext = "";
+
+if (fs.existsSync(STATE_FILE)) {
+  let port = null;
+  try {
+    const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    port = state.port;
+  } catch {}
+
+  if (port) {
+    let healthy = false;
+    try {
+      const res = await fetch(`http://localhost:${port}/health`, {
+        signal: AbortSignal.timeout(1000),
+      });
+      healthy = res.ok;
+    } catch {}
+
+    if (healthy) {
+      additionalContext = `Website Commenter bridge is active on port ${port}. Use /website-comments to fetch and apply pending feedback from the browser extension.`;
+    } else {
+      // Stale state file — bridge crashed. Remove it.
+      try {
+        fs.unlinkSync(STATE_FILE);
+      } catch {}
+    }
+  }
 }
 
-// Check pending comment count to include in context
-let commentCount = 0;
-try {
-  const res = await fetch("http://localhost:8789/health", {
-    signal: AbortSignal.timeout(1000),
-  });
-  if (res.ok) {
-    const data = await res.json();
-    commentCount = data.commentCount ?? 0;
-  }
-} catch {}
-
-const countNote =
-  commentCount > 0
-    ? ` There are currently ${commentCount} pending comment(s) — use /website-comments to process them.`
-    : "";
-
-process.stdout.write(
-  JSON.stringify({
-    additionalContext: `Website Commenter bridge is running on localhost:8789. The browser extension can send DOM element annotations to this session.${countNote} Use /website-comments to fetch and act on pending comments.`,
-  }),
-);
+if (additionalContext) {
+  process.stdout.write(JSON.stringify({ additionalContext }));
+}
