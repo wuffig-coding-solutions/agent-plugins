@@ -7,8 +7,8 @@
   "license": "MIT",
   "mcpServers": {
     "website-commenter": {
-      "command": "bun",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/bridge/server.ts"]
+      "command": "bash",
+      "args": ["-c", "exec bun \"$CLAUDE_PLUGIN_ROOT/bridge/server.ts\""]
     }
   }
 }
