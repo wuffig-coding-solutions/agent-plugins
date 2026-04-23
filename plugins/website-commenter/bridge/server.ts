@@ -8,7 +8,7 @@ import {
 import { findAvailablePort } from "./find-port";
 import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 
-export const STATE_FILE = "/tmp/claude-wc-bridge.json";
+export const STATE_FILE = `/tmp/claude-wc-bridge-${process.pid}.json`;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
