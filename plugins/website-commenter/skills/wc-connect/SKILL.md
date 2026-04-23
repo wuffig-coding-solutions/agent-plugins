@@ -1,6 +1,6 @@
 ---
 name: wc-connect
-description: Show the active bridge port so the Firefox extension can connect. Use when the user says "website commenter", "what port", or "connect the extension".
+description: Show the active bridge port so the browser extension can connect. Use when the user says "website commenter", "what port", or "connect the extension".
 ---
 
 # Website Commenter — Connect the Extension
@@ -13,9 +13,19 @@ First call `get_bridge_port` on the `website-commenter` MCP server. If the tool 
 
 If the tool returns an error indicating the bridge is stopped (e.g. port 0 or an error response), call `connect_bridge` on the same MCP server to start it. It will return the new port.
 
-## Step 2 — Display connection instructions
+## Step 2 — Check channel status
 
-Tell the user:
+Call the bridge health endpoint to check if channels are active:
+
+```bash
+curl -s http://localhost:{PORT}/health
+```
+
+Check the `channelActive` field in the response.
+
+## Step 3 — Display connection instructions
+
+**If `channelActive` is true:**
 
 > The Website Commenter bridge for this session is running on port **{PORT}**.
 >
@@ -25,6 +35,30 @@ Tell the user:
 > 2. Paste **{PORT}** into the port field and click Connect
 > 3. The extension will show a green connected indicator
 >
-> Once connected, any comment you send from the extension will **immediately interrupt Claude** and apply the change to the codebase — no manual command needed.
+> **Channel mode is active** — comments from the extension will immediately interrupt Claude and apply changes automatically.
 >
 > Use `/wc-apply` as a fallback if the automatic interrupt is not firing.
+
+**If `channelActive` is false:**
+
+> The Website Commenter bridge for this session is running on port **{PORT}**.
+>
+> **In the browser extension:**
+>
+> 1. Open the extension popup
+> 2. Paste **{PORT}** into the port field and click Connect
+> 3. The extension will show a green connected indicator
+>
+> **Note:** Channel mode is not active — comments won't auto-interrupt. Use `/wc-apply` to manually process staged comments.
+>
+> To enable auto-interrupt, restart Claude Code with:
+>
+> ```
+> claude --channels plugin:website-commenter@agent-plugins
+> ```
+>
+> Or add a shell alias:
+>
+> ```
+> alias cc="claude --channels plugin:website-commenter@agent-plugins"
+> ```

@@ -10,5 +10,10 @@
       "command": "bash",
       "args": ["-c", "exec bun \"$CLAUDE_PLUGIN_ROOT/bridge/server.ts\""]
     }
-  }
+  },
+  "channels": [
+    {
+      "server": "website-commenter"
+    }
+  ]
 }

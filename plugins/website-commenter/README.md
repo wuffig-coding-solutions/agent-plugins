@@ -5,7 +5,7 @@ A Claude Code plugin that lets you click on any DOM element in Firefox, leave a 
 ## How it works
 
 ```
-Firefox extension  →  POST /comments  →  Bridge (HTTP + MCP stdio)  →  channel notification  →  Claude Code
+Browser extension  →  POST /comments  →  Bridge (HTTP + MCP stdio)  →  channel notification  →  Claude Code
 ```
 
 - Claude Code auto-spawns `bridge/server.ts` as an MCP server (stdio transport) on session start
@@ -13,12 +13,30 @@ Firefox extension  →  POST /comments  →  Bridge (HTTP + MCP stdio)  →  cha
 - When the extension POSTs a comment, the bridge fires a `notifications/claude/channel` notification
 - Claude interrupts its current work and applies the change
 
+### Enabling channel interrupts
+
+Channel notifications require Claude Code to be started with the `--channels` flag:
+
+```bash
+claude --channels plugin:website-commenter@agent-plugins
+```
+
+Without this flag, the bridge still works but comments won't auto-interrupt — use `/wc-apply` to manually process them.
+
+**Recommended:** add a shell alias so you don't have to remember the flag:
+
+```bash
+alias cc="claude --channels plugin:website-commenter@agent-plugins"
+```
+
 ## Skills
 
-| Command       | Purpose                                                                      |
-| ------------- | ---------------------------------------------------------------------------- |
-| `/wc-connect` | Get this session's port → connect the browser extension                      |
-| `/wc-apply`   | Manually fetch and apply pending comments (fallback if channel isn't firing) |
+| Command          | Purpose                                                                      |
+| ---------------- | ---------------------------------------------------------------------------- |
+| `/wc-connect`    | Get this session's port → connect the browser extension                      |
+| `/wc-apply`      | Manually fetch and apply pending comments (fallback if channel isn't firing) |
+| `/wc-disconnect` | Stop the HTTP bridge (MCP stays alive; `/wc-connect` restarts it)            |
+| `/wc-statusline` | Add a bridge port indicator to your Claude Code status line                  |
 
 Use `/wc-connect` first. It calls the `get_bridge_port` MCP tool, which is session-scoped and always returns the correct port even if multiple Claude Code windows are open.
 
@@ -35,17 +53,21 @@ plugins/website-commenter/
 ├── hooks/
 │   └── session-start.js     # Runs at session start (no-op; bridge starts via MCP)
 └── skills/
-    ├── wc-connect/SKILL.md  # Connect the browser extension
-    └── wc-apply/SKILL.md    # Fallback: manually apply pending comments
+    ├── wc-connect/SKILL.md     # Connect the browser extension
+    ├── wc-apply/SKILL.md       # Fallback: manually apply pending comments
+    ├── wc-disconnect/SKILL.md  # Stop the HTTP bridge
+    └── wc-statusline/SKILL.md  # Add port indicator to status line
 ```
 
 ### MCP tools exposed by the bridge
 
-| Tool                     | Description                                                 |
-| ------------------------ | ----------------------------------------------------------- |
-| `get_bridge_port`        | Returns the HTTP port this session's bridge is listening on |
-| `get_website_comments`   | Returns all pending comments (fallback polling)             |
-| `clear_website_comments` | Clears pending comments by ID or all                        |
+| Tool                     | Description                                                  |
+| ------------------------ | ------------------------------------------------------------ |
+| `get_bridge_port`        | Returns the HTTP port this session's bridge is listening on  |
+| `get_website_comments`   | Returns all pending comments (fallback polling)              |
+| `clear_website_comments` | Clears pending comments by ID or all                         |
+| `connect_bridge`         | Starts (or restarts) the HTTP server on a new available port |
+| `disconnect_bridge`      | Stops the HTTP server; MCP stays alive for reconnection      |
 
 ### Environment flags
 
