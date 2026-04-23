@@ -20,7 +20,7 @@
         "url": "https://github.com/wuffig-coding-solutions/agent-plugins.git",
         "path": "plugins/protocollant",
         "ref": "main",
-        "sha": "PLACEHOLDER"
+        "sha": "825725498cabd96a6755690d6f4ca9fd91d39f4d"
       }
     },
     {
@@ -35,7 +35,7 @@
         "url": "https://github.com/wuffig-coding-solutions/agent-plugins.git",
         "path": "plugins/mem0",
         "ref": "main",
-        "sha": "PLACEHOLDER"
+        "sha": "825725498cabd96a6755690d6f4ca9fd91d39f4d"
       }
     },
     {
@@ -50,7 +50,7 @@
         "url": "https://github.com/wuffig-coding-solutions/agent-plugins.git",
         "path": "plugins/website-commenter",
         "ref": "main",
-        "sha": "PLACEHOLDER"
+        "sha": "825725498cabd96a6755690d6f4ca9fd91d39f4d"
       }
     }
   ]
