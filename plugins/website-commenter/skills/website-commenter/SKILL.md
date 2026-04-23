@@ -1,63 +1,28 @@
 ---
 name: website-commenter
-description: Start the website commenter bridge server so the Firefox extension can connect. Use when the user says "start website commenter", "start the bridge", or "connect the extension".
+description: Show the active bridge port so the Firefox extension can connect. Use when the user says "website commenter", "what port", or "connect the extension".
 ---
 
-# Website Commenter — Start Bridge
+# Website Commenter — Connect the Extension
 
-## Step 1 — Check if already running
+The bridge starts automatically when Claude Code launches (via MCP). To find the port:
+
+## Step 1 — Read the port
 
 Run:
 
 ```bash
-PORT=""
-STATUS=""
-if [ -f /tmp/claude-wc-bridge.json ]; then
-  PORT=$(jq -r '.port // ""' /tmp/claude-wc-bridge.json 2>/dev/null)
-  STATUS=$(curl -sf --max-time 1 "http://localhost:${PORT}/health" 2>/dev/null \
-    | jq -r '.status // ""' 2>/dev/null)
-fi
-echo "PORT=${PORT} STATUS=${STATUS}"
-```
-
-If output shows `STATUS=ok`, tell the user:
-
-> The Website Commenter bridge is already running on port **{PORT}**. Paste this into the Firefox extension if you haven't already.
-
-Stop here. If the state file existed but the health check failed (bridge crashed), clean up and continue:
-
-```bash
-rm -f /tmp/claude-wc-bridge.json
-```
-
-## Step 2 — Start the bridge
-
-```bash
-bash ~/.claude/wc-start.sh &
-for i in $(seq 1 10); do
-  PORT=$(jq -r '.port // ""' /tmp/claude-wc-bridge.json 2>/dev/null)
-  [ -n "$PORT" ] && break
-  sleep 0.2
-done
-```
-
-## Step 3 — Read the port
-
-```bash
+PORT=$(jq -r '.port // ""' /tmp/claude-wc-bridge.json 2>/dev/null)
 echo "PORT=${PORT}"
 ```
 
-If `PORT` is empty, tell the user:
+If `PORT` is empty, the bridge has not started yet. This can happen on the very first session before the MCP server has initialised. Wait a moment and retry, or restart Claude Code.
 
-> The bridge failed to start. Make sure Bun is installed (`bun --version`) and try again.
-
-Stop here.
-
-## Step 4 — Display connection instructions
+## Step 2 — Display connection instructions
 
 Tell the user:
 
-> ✓ Website Commenter bridge is running on port **{PORT}**.
+> The Website Commenter bridge is running on port **{PORT}**.
 >
 > **In the Firefox extension:**
 >
@@ -65,4 +30,6 @@ Tell the user:
 > 2. Paste **{PORT}** into the port field and click Connect
 > 3. The extension will show a green connected indicator
 >
-> Use `/website-comments` to fetch and apply any pending feedback.
+> Once connected, any comment you send from the extension will **immediately interrupt Claude** and apply the change to the codebase — no manual command needed.
+>
+> Use `/website-comments` as a fallback if the automatic interrupt is not firing.

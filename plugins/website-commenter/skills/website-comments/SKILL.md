@@ -3,6 +3,8 @@ name: website-comments
 description: Fetch and process pending DOM element comments sent from the browser extension. Use when the user says "check website comments", "apply website feedback", or asks about pending comments.
 ---
 
+> **Fallback mode.** This skill manually polls and applies comments. Normally, comments from the browser extension interrupt Claude immediately via the MCP channel without any manual command. Use this skill only if the automatic interrupt is not firing (e.g., after a fresh install before Claude Code has restarted, or if the MCP channel is unavailable).
+
 # Website Comments
 
 ## Step 1 — Find the bridge port
