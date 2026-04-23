@@ -87,9 +87,11 @@ const store: WebsiteComment[] = [];
 // ── Port resolution ───────────────────────────────────────────────────────────
 
 const portArgIdx = process.argv.indexOf("--port");
+const portArg =
+  portArgIdx !== -1 ? parseInt(process.argv[portArgIdx + 1], 10) : NaN;
 const port =
-  portArgIdx !== -1
-    ? parseInt(process.argv[portArgIdx + 1], 10)
+  !isNaN(portArg) && portArg > 0 && portArg < 65536
+    ? portArg
     : await findAvailablePort();
 
 // ── HTTP server ────────────────────────────────────────────────────────────────
