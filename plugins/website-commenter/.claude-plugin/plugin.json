@@ -1,8 +1,14 @@
 {
   "name": "website-commenter",
-  "description": "Browser extension bridge that lets you comment on DOM elements and send feedback directly to Claude Code. Starts an HTTP bridge server automatically on session start.",
+  "description": "Browser extension bridge that lets you comment on DOM elements and send feedback directly to Claude Code. Auto-spawns a bridge server via MCP — channel notifications interrupt Claude immediately when comments arrive.",
   "version": "1.0.0",
   "author": { "name": "Niklas-Flaig" },
   "repository": "https://github.com/wuffig-coding-solutions/website-commenter",
-  "license": "MIT"
+  "license": "MIT",
+  "mcpServers": {
+    "website-commenter": {
+      "command": "bun",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bridge/server.ts"]
+    }
+  }
 }
