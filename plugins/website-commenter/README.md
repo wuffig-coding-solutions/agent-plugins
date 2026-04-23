@@ -66,21 +66,28 @@ The popup shows **"Connected · ⚡ Channel active"** when the MCP handshake is 
 
 ## Development workflow
 
-> **Important:** The plugin cache is keyed by version number. If you don't bump the version, `/reload-plugins` will silently skip the re-fetch.
+### Version bumps are mandatory for updates
+
+The plugin cache is keyed by version number. **If you don't bump the version, your changes will never reach Claude Code** — `/reload-plugins` sees the same version in the cache and silently skips re-fetching, even though the code on GitHub has changed.
+
+You must update the version in **two** files, and they must match:
+
+| File                                                   | Field                                         |
+| ------------------------------------------------------ | --------------------------------------------- |
+| `plugins/website-commenter/.claude-plugin/plugin.json` | `"version"`                                   |
+| `.claude-plugin/marketplace.json`                      | `"version"` for the `website-commenter` entry |
+
+If you forget either one, the update won't roll out. If they don't match, behaviour is undefined.
 
 ### Making changes
 
 1. Edit files under `plugins/website-commenter/`
 2. Run tests: `cd plugins/website-commenter && bun test`
-3. Bump the version in **both** places:
-   - `plugins/website-commenter/.claude-plugin/plugin.json` → `"version"`
-   - `.claude-plugin/marketplace.json` → `"version"` for the `website-commenter` entry
+3. Bump the version in **both** files listed above
 4. Commit and push
-
-### Reloading the plugin in Claude Code
+5. Delete the old cached version and reload:
 
 ```bash
-# First time after a version bump (clears the old cached version):
 rm -rf ~/.claude/plugins/cache/agent-plugins/website-commenter/<old-version>
 ```
 

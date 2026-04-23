@@ -1,58 +1,58 @@
 # agent-plugins — Claude Code Plugin Registry
 
-Central marketplace registry for the `wuffig-coding-solutions` org. Plugin repos dispatch their latest SHA here on every push to `main`; this repo stores the pinned SHAs in `.claude-plugin/marketplace.json`.
+Personal plugin registry for the `wuffig-coding-solutions` org. All plugins live in `plugins/` and are indexed by `.claude-plugin/marketplace.json`.
 
-## Install a plugin
+## Install
 
 ```
 /plugin marketplace add wuffig-coding-solutions/agent-plugins
 /plugin install protocollant@agent-plugins
 /plugin install mem0@agent-plugins
+/plugin install website-commenter@agent-plugins
 ```
 
----
+## Plugins
 
-## Org-level secrets & variables
+| Plugin              | Description                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| `protocollant`      | Maintains a structured knowledge base in `docs/` and keeps `CLAUDE.md` in sync              |
+| `mem0`              | Persistent memory via mem0 — fully implicit, no manual commands                             |
+| `website-commenter` | Browser extension bridge for commenting on DOM elements — interrupts Claude via MCP channel |
 
-Both are set once on the `wuffig-coding-solutions` org (visibility: **All repositories**) and inherited automatically by every plugin repo — no per-repo configuration needed.
+## Publishing updates
 
-| Type     | Name                   | Value                                   |
-| -------- | ---------------------- | --------------------------------------- |
-| Variable | `PLUGIN_REGISTRY_REPO` | `wuffig-coding-solutions/agent-plugins` |
-| Secret   | `PLUGIN_REGISTRY_PAT`  | Fine-grained PAT (see below)            |
+### Version bumps are mandatory
 
-### `PLUGIN_REGISTRY_PAT` — required permissions
+The plugin cache is keyed by **version number**. If you change code but don't bump the version, `/reload-plugins` will silently skip re-fetching — your changes never reach Claude Code.
 
-Create a **fine-grained PAT** at `github.com/settings/personal-access-tokens/new`:
+When updating any plugin, bump the version in **both** files:
 
-| Setting             | Value                     |
-| ------------------- | ------------------------- |
-| Resource owner      | `wuffig-coding-solutions` |
-| Repository access   | Only `agent-plugins`      |
-| Contents permission | **Read and write**        |
+| File                                        | What to change                      |
+| ------------------------------------------- | ----------------------------------- |
+| `plugins/<name>/.claude-plugin/plugin.json` | `"version"` field                   |
+| `.claude-plugin/marketplace.json`           | `"version"` for that plugin's entry |
 
-Store the generated token value as the org secret `PLUGIN_REGISTRY_PAT` at:  
-`github.com/organizations/wuffig-coding-solutions/settings/secrets/actions`
+These must match. If you forget either one, the update won't roll out.
 
----
+### Full workflow
 
-## How the pipeline works
+1. Edit files under `plugins/<name>/`
+2. Run tests if applicable
+3. Bump the version in **both** files listed above
+4. Commit and push
+5. Clear the old cache and reload:
 
-```
-Plugin repo push to main
-  └── notify-registry.yml
-        └── gh api POST /repos/PLUGIN_REGISTRY_REPO/dispatches
-              └── agent-plugins: sync-shas.yml (repository_dispatch)
-                    └── Updates sha in .claude-plugin/marketplace.json
-                          └── Commits + pushes
+```bash
+rm -rf ~/.claude/plugins/cache/agent-plugins/<plugin-name>/<old-version>
 ```
 
----
+Then run `/reload-plugins` in Claude Code.
 
-## Adding a new plugin repo
+## Adding a new plugin
 
-1. Scaffold the plugin with `/create-plugin` — the `notify-registry.yml` workflow is included automatically.
-2. Add an entry to `.claude-plugin/marketplace.json` (leave `sha` empty — CI fills it on first push):
+1. Create a directory under `plugins/<plugin-name>/`
+2. Add `.claude-plugin/plugin.json` with at minimum `name` and `version`
+3. Add an entry to `.claude-plugin/marketplace.json`:
 
 ```json
 {
@@ -62,12 +62,11 @@ Plugin repo push to main
   "author": { "name": "Niklas-Flaig" },
   "source": {
     "source": "git-subdir",
-    "url": "https://github.com/wuffig-coding-solutions/<plugin-name>.git",
-    "path": ".",
-    "ref": "main",
-    "sha": ""
+    "url": "https://github.com/wuffig-coding-solutions/agent-plugins.git",
+    "path": "plugins/<plugin-name>",
+    "ref": "main"
   }
 }
 ```
 
-3. Push to `main` — the SHA is populated automatically.
+4. Commit, push, and run `/reload-plugins`.
