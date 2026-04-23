@@ -34,13 +34,16 @@ rm -f /tmp/claude-wc-bridge.json
 
 ```bash
 bash ~/.claude/wc-start.sh &
-sleep 0.6
+for i in $(seq 1 10); do
+  PORT=$(jq -r '.port // ""' /tmp/claude-wc-bridge.json 2>/dev/null)
+  [ -n "$PORT" ] && break
+  sleep 0.2
+done
 ```
 
 ## Step 3 — Read the port
 
 ```bash
-PORT=$(jq -r '.port // ""' /tmp/claude-wc-bridge.json 2>/dev/null)
 echo "PORT=${PORT}"
 ```
 

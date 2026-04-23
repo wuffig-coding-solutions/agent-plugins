@@ -154,18 +154,24 @@ Bun.serve({
 
 // ── State file ─────────────────────────────────────────────────────────────────
 
-writeFileSync(
-  STATE_FILE,
-  JSON.stringify({ port, pid: process.pid, started: new Date().toISOString() }),
-);
+const skipStateFile = process.env.WC_NO_STATE_FILE === "1";
+
+if (!skipStateFile) {
+  writeFileSync(
+    STATE_FILE,
+    JSON.stringify({
+      port,
+      pid: process.pid,
+      started: new Date().toISOString(),
+    }),
+  );
+}
 console.error(`[bridge] listening on port ${port}`);
-// stdout signal: skill reads this to know the server is up
-process.stdout.write(`BRIDGE_PORT=${port}\n`);
 
 // ── Cleanup ────────────────────────────────────────────────────────────────────
 
 const cleanup = () => {
-  if (existsSync(STATE_FILE)) unlinkSync(STATE_FILE);
+  if (!skipStateFile && existsSync(STATE_FILE)) unlinkSync(STATE_FILE);
   process.exit(0);
 };
 process.on("SIGTERM", cleanup);
