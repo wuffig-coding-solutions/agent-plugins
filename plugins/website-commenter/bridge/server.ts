@@ -156,10 +156,26 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
       {
         name: "disconnect_bridge",
         description:
-          "Shuts down this session's bridge server cleanly. " +
-          "The HTTP server stops, the state file is removed, and the process exits. " +
-          "Claude Code will respawn a fresh bridge on the next MCP tool call.",
+          "Stops the HTTP bridge server. The browser extension will lose connectivity. " +
+          "The MCP server stays alive so you can call connect_bridge to restart it.",
         inputSchema: { type: "object", properties: {}, required: [] },
+      },
+      {
+        name: "connect_bridge",
+        description:
+          "Starts (or restarts) the HTTP bridge server on a new available port. " +
+          "Returns the new port number. Use after disconnect_bridge to reconnect.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            port: {
+              type: "number",
+              description:
+                "Specific port to use. Omit to auto-select an available port.",
+            },
+          },
+          required: [],
+        },
       },
     ],
   }));
@@ -168,6 +184,17 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
     const { name, arguments: args } = request.params;
 
     if (name === "get_bridge_port") {
+      if (!httpServer) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Bridge is stopped. Call connect_bridge to start it.",
+            },
+          ],
+          isError: true,
+        };
+      }
       return {
         content: [{ type: "text", text: String(port) }],
       };
@@ -224,12 +251,42 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
     }
 
     if (name === "disconnect_bridge") {
-      setTimeout(() => {
-        if (!skipStateFile && existsSync(STATE_FILE)) unlinkSync(STATE_FILE);
-        process.exit(0);
-      }, 100);
+      stopHttpServer();
       return {
-        content: [{ type: "text", text: "Bridge shutting down." }],
+        content: [
+          {
+            type: "text",
+            text: "Bridge HTTP server stopped. Use connect_bridge to restart.",
+          },
+        ],
+      };
+    }
+
+    if (name === "connect_bridge") {
+      if (httpServer) {
+        return {
+          content: [
+            { type: "text", text: `Bridge already running on port ${port}.` },
+          ],
+        };
+      }
+      const requestedPort =
+        typeof args?.port === "number" && args.port > 0 && args.port < 65536
+          ? args.port
+          : await findAvailablePort();
+      startHttpServer(requestedPort);
+      if (!skipStateFile) {
+        writeFileSync(
+          STATE_FILE,
+          JSON.stringify({
+            port,
+            pid: process.pid,
+            started: new Date().toISOString(),
+          }),
+        );
+      }
+      return {
+        content: [{ type: "text", text: `Bridge started on port ${port}.` }],
       };
     }
 
@@ -297,79 +354,98 @@ async function pushBatchChannelNotification(
 const portArgIdx = process.argv.indexOf("--port");
 const portArg =
   portArgIdx !== -1 ? parseInt(process.argv[portArgIdx + 1], 10) : NaN;
-const port =
+let port =
   !isNaN(portArg) && portArg > 0 && portArg < 65536
     ? portArg
     : await findAvailablePort();
 
-// ── HTTP server ────────────────────────────────────────────────────────────────
-
-Bun.serve({
-  port,
-  async fetch(req) {
-    const { pathname } = new URL(req.url);
-
-    if (req.method === "OPTIONS")
-      return new Response(null, { status: 204, headers: CORS });
-
-    if (req.method === "GET" && pathname === "/health")
-      return json({
-        status: "ok",
-        commentCount: store.length,
-        port,
-        channelActive,
-      });
-
-    if (req.method === "GET" && pathname === "/comments")
-      return json(store.slice());
-
-    if (req.method === "DELETE" && pathname === "/comments") {
-      const count = store.length;
-      store.splice(0, store.length);
-      return json({ cleared: count });
-    }
-
-    if (req.method === "POST" && pathname === "/comments") {
-      let body: unknown;
-      try {
-        body = await req.json();
-      } catch {
-        return fail("Invalid JSON");
-      }
-      if (!isValidComment(body))
-        return fail("Invalid comment shape — missing required fields");
-      store.push(body);
-      console.error(`[bridge] comment id=${body.id} url=${body.url}`);
-      pushChannelNotification(body).catch(() => {});
-      return json({ ok: true, id: body.id }, 201);
-    }
-
-    if (req.method === "POST" && pathname === "/comments/batch") {
-      let body: unknown;
-      try {
-        body = await req.json();
-      } catch {
-        return fail("Invalid JSON");
-      }
-      if (!Array.isArray(body)) return fail("Expected array of comments");
-      const valid = (body as unknown[]).filter(isValidComment);
-      const rejected = body.length - valid.length;
-      for (const c of valid) store.push(c);
-      console.error(
-        `[bridge] batch accepted=${valid.length} rejected=${rejected}`,
-      );
-      pushBatchChannelNotification(valid).catch(() => {});
-      return json({ ok: true, accepted: valid.length, rejected }, 201);
-    }
-
-    return fail("Not found", 404);
-  },
-  error: () => fail("Internal server error", 500),
-});
-
-// ── State file ─────────────────────────────────────────────────────────────────
+// ── State file flag ──────────────────────────────────────────────────────────
 
 const skipStateFile = process.env.WC_NO_STATE_FILE === "1";
+
+// ── HTTP server ────────────────────────────────────────────────────────────────
+
+let httpServer: ReturnType<typeof Bun.serve> | null = null;
+
+function startHttpServer(listenPort: number): void {
+  httpServer = Bun.serve({
+    port: listenPort,
+    async fetch(req) {
+      const { pathname } = new URL(req.url);
+
+      if (req.method === "OPTIONS")
+        return new Response(null, { status: 204, headers: CORS });
+
+      if (req.method === "GET" && pathname === "/health")
+        return json({
+          status: "ok",
+          commentCount: store.length,
+          port,
+          channelActive,
+        });
+
+      if (req.method === "GET" && pathname === "/comments")
+        return json(store.slice());
+
+      if (req.method === "DELETE" && pathname === "/comments") {
+        const count = store.length;
+        store.splice(0, store.length);
+        return json({ cleared: count });
+      }
+
+      if (req.method === "POST" && pathname === "/comments") {
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return fail("Invalid JSON");
+        }
+        if (!isValidComment(body))
+          return fail("Invalid comment shape — missing required fields");
+        store.push(body);
+        console.error(`[bridge] comment id=${body.id} url=${body.url}`);
+        pushChannelNotification(body).catch(() => {});
+        return json({ ok: true, id: body.id }, 201);
+      }
+
+      if (req.method === "POST" && pathname === "/comments/batch") {
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return fail("Invalid JSON");
+        }
+        if (!Array.isArray(body)) return fail("Expected array of comments");
+        const valid = (body as unknown[]).filter(isValidComment);
+        const rejected = body.length - valid.length;
+        for (const c of valid) store.push(c);
+        console.error(
+          `[bridge] batch accepted=${valid.length} rejected=${rejected}`,
+        );
+        pushBatchChannelNotification(valid).catch(() => {});
+        return json({ ok: true, accepted: valid.length, rejected }, 201);
+      }
+
+      return fail("Not found", 404);
+    },
+    error: () => fail("Internal server error", 500),
+  });
+  port = listenPort;
+  console.error(`[bridge] listening on port ${port}`);
+}
+
+function stopHttpServer(): void {
+  if (httpServer) {
+    httpServer.stop(true);
+    httpServer = null;
+    console.error("[bridge] HTTP server stopped");
+  }
+  if (!skipStateFile && existsSync(STATE_FILE)) {
+    unlinkSync(STATE_FILE);
+  }
+}
+
+startHttpServer(port);
 
 if (!skipStateFile) {
   writeFileSync(
@@ -381,7 +457,6 @@ if (!skipStateFile) {
     }),
   );
 }
-console.error(`[bridge] listening on port ${port}`);
 
 // ── Cleanup ────────────────────────────────────────────────────────────────────
 

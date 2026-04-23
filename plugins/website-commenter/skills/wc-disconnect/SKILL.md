@@ -5,7 +5,7 @@ description: Disconnect and shut down the Website Commenter bridge for this sess
 
 # Website Commenter — Disconnect
 
-Shuts down the bridge server for this Claude Code session. The browser extension will show "Disconnected" after the next health check. Claude Code will respawn a fresh bridge automatically if you call any website-commenter MCP tool later.
+Stops the HTTP bridge server for this Claude Code session. The browser extension will show "Disconnected" after the next health check. The MCP connection stays alive so you can reconnect without restarting the session.
 
 ## Step 1 — Disconnect via MCP tool
 
@@ -23,4 +23,4 @@ Tell the user:
 
 > The Website Commenter bridge has been shut down. The browser extension will show **Disconnected** momentarily.
 >
-> To reconnect later, run `/wc-connect` — Claude Code will start a fresh bridge automatically.
+> To reconnect, run `/wc-connect` — the bridge will start on a new port in this same session.

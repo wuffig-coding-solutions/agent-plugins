@@ -7,11 +7,11 @@ description: Show the active bridge port so the Firefox extension can connect. U
 
 The bridge starts automatically when Claude Code launches (via MCP). To find the port for **this session**:
 
-## Step 1 — Get the port via MCP tool
+## Step 1 — Ensure the bridge is running
 
-Call the `get_bridge_port` tool on the `website-commenter` MCP server. It returns the exact port this session's bridge is listening on.
+First call `get_bridge_port` on the `website-commenter` MCP server. If the tool returns a port number, the bridge is running — skip to Step 2.
 
-> **Why not read `/tmp/claude-wc-bridge.json`?** That file is shared across all Claude Code sessions. With multiple windows open, it shows the last bridge to start — which may not be yours.
+If the tool returns an error indicating the bridge is stopped (e.g. port 0 or an error response), call `connect_bridge` on the same MCP server to start it. It will return the new port.
 
 ## Step 2 — Display connection instructions
 
@@ -19,7 +19,7 @@ Tell the user:
 
 > The Website Commenter bridge for this session is running on port **{PORT}**.
 >
-> **In the Firefox extension:**
+> **In the browser extension:**
 >
 > 1. Open the extension popup
 > 2. Paste **{PORT}** into the port field and click Connect
