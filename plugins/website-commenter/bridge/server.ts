@@ -1,4 +1,10 @@
 // plugins/website-commenter/bridge/server.ts
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { findAvailablePort } from "./find-port";
 import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 
@@ -84,6 +90,154 @@ const fail = (msg: string, status = 400): Response =>
 
 const store: WebsiteComment[] = [];
 
+// ── MCP server + channel notifications ───────────────────────────────────────
+
+const skipMcp = process.env.WC_NO_MCP === "1";
+let channelActive = false;
+let mcpServer: Server | null = null;
+
+if (!skipMcp) {
+  mcpServer = new Server(
+    { name: "website-commenter", version: "1.0.0" },
+    {
+      capabilities: {
+        experimental: { "claude/channel": {} },
+        tools: {},
+      },
+      instructions: `Website comments arrive as channel notifications from the browser extension.
+When a notification arrives, IMMEDIATELY stop current work and apply the requested change to the codebase.
+Each notification contains the user's comment, the page URL, the CSS selector of the targeted element,
+truncated outer HTML, and computed styles.
+Use get_website_comments to poll manually. Use clear_website_comments after processing to acknowledge receipt.`,
+    },
+  );
+
+  mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [
+      {
+        name: "get_website_comments",
+        description:
+          "Returns all pending website comments from the browser extension. " +
+          "Fallback for when channel notifications are unavailable.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            limit: {
+              type: "number",
+              description: "Maximum comments to return (default: all)",
+            },
+          },
+          required: [],
+        },
+      },
+      {
+        name: "clear_website_comments",
+        description:
+          "Clears pending website comments. Call after processing to acknowledge receipt.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            ids: {
+              type: "array",
+              items: { type: "string" },
+              description: "Specific IDs to clear. Omit to clear all.",
+            },
+          },
+          required: [],
+        },
+      },
+    ],
+  }));
+
+  mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+
+    if (name === "get_website_comments") {
+      const limit = typeof args?.limit === "number" ? args.limit : undefined;
+      const comments =
+        limit !== undefined ? store.slice(0, limit) : store.slice();
+      if (comments.length === 0) {
+        return { content: [{ type: "text", text: "No pending comments." }] };
+      }
+      const text = comments
+        .map(
+          (c, i) =>
+            `--- Comment ${i + 1} (id: ${c.id}) ---\n` +
+            `URL: ${c.url}\n` +
+            `Page: ${c.pageTitle}\n` +
+            `Element: <${c.element.tagName}> (selector: ${c.element.selector})\n` +
+            `Comment: ${c.comment}\n` +
+            `HTML: ${c.element.outerHTML.substring(0, 300)}`,
+        )
+        .join("\n\n");
+      return {
+        content: [
+          { type: "text", text: `${comments.length} comment(s):\n\n${text}` },
+        ],
+      };
+    }
+
+    if (name === "clear_website_comments") {
+      const ids = Array.isArray(args?.ids) ? (args.ids as string[]) : undefined;
+      if (ids !== undefined) {
+        const idSet = new Set(ids);
+        const before = store.length;
+        for (let i = store.length - 1; i >= 0; i--) {
+          if (idSet.has(store[i].id)) store.splice(i, 1);
+        }
+        const cleared = before - store.length;
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Cleared ${cleared} comment(s). ${store.length} remaining.`,
+            },
+          ],
+        };
+      }
+      const count = store.length;
+      store.splice(0, store.length);
+      return {
+        content: [{ type: "text", text: `Cleared all ${count} comment(s).` }],
+      };
+    }
+
+    return {
+      content: [{ type: "text", text: `Unknown tool: ${name}` }],
+      isError: true,
+    };
+  });
+}
+
+// ── Channel push helper ───────────────────────────────────────────────────────
+
+async function pushChannelNotification(comment: WebsiteComment): Promise<void> {
+  if (!mcpServer || !channelActive) return;
+  try {
+    await mcpServer.notification({
+      method: "notifications/claude/channel",
+      params: {
+        content:
+          `New website comment on ${comment.url}:\n` +
+          `"${comment.comment}"\n` +
+          `Element: <${comment.element.tagName}> ${comment.element.selector}\n` +
+          `HTML: ${comment.element.outerHTML.substring(0, 300)}`,
+        meta: {
+          url: comment.url,
+          page_title: comment.pageTitle,
+          selector: comment.element.selector,
+          element_tag: comment.element.tagName,
+          element_html: comment.element.outerHTML.substring(0, 300),
+          comment_id: comment.id,
+          comment_text: comment.comment,
+        },
+      },
+    });
+  } catch (err) {
+    console.error("[bridge] channel push failed:", err);
+  }
+}
+
 // ── Port resolution ───────────────────────────────────────────────────────────
 
 const portArgIdx = process.argv.indexOf("--port");
@@ -105,7 +259,12 @@ Bun.serve({
       return new Response(null, { status: 204, headers: CORS });
 
     if (req.method === "GET" && pathname === "/health")
-      return json({ status: "ok", commentCount: store.length, port });
+      return json({
+        status: "ok",
+        commentCount: store.length,
+        port,
+        channelActive,
+      });
 
     if (req.method === "GET" && pathname === "/comments")
       return json(store.slice());
@@ -127,6 +286,7 @@ Bun.serve({
         return fail("Invalid comment shape — missing required fields");
       store.push(body);
       console.error(`[bridge] comment id=${body.id} url=${body.url}`);
+      pushChannelNotification(body).catch(() => {});
       return json({ ok: true, id: body.id }, 201);
     }
 
@@ -144,6 +304,9 @@ Bun.serve({
       console.error(
         `[bridge] batch accepted=${valid.length} rejected=${rejected}`,
       );
+      if (valid.length > 0) {
+        pushChannelNotification(valid[0]).catch(() => {});
+      }
       return json({ ok: true, accepted: valid.length, rejected }, 201);
     }
 
@@ -176,3 +339,22 @@ const cleanup = () => {
 };
 process.on("SIGTERM", cleanup);
 process.on("SIGINT", cleanup);
+
+// ── MCP transport (after HTTP is ready) ───────────────────────────────────────
+
+if (!skipMcp && mcpServer) {
+  const transport = new StdioServerTransport();
+  transport.onclose = () => {
+    channelActive = false;
+    console.error("[bridge] MCP transport closed");
+  };
+  transport.onerror = (err) => {
+    console.error("[bridge] MCP transport error:", err);
+  };
+  mcpServer.oninitialized = () => {
+    channelActive = true;
+    console.error("[bridge] MCP initialized — channel active");
+  };
+  await mcpServer.connect(transport);
+  console.error("[bridge] MCP server connected via stdio");
+}
