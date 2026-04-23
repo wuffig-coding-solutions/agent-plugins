@@ -299,8 +299,38 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
 
 // ── Channel push helper ───────────────────────────────────────────────────────
 
+let lastNotificationResult: {
+  timestamp: string;
+  status: "sent" | "skipped" | "error";
+  reason?: string;
+  commentId?: string;
+} | null = null;
+
+export function getLastNotificationResult() {
+  return lastNotificationResult;
+}
+
 async function pushChannelNotification(comment: WebsiteComment): Promise<void> {
-  if (!mcpServer || !channelActive) return;
+  if (!mcpServer) {
+    lastNotificationResult = {
+      timestamp: new Date().toISOString(),
+      status: "skipped",
+      reason: "mcpServer is null",
+      commentId: comment.id,
+    };
+    console.error("[bridge] channel push skipped: mcpServer is null");
+    return;
+  }
+  if (!channelActive) {
+    lastNotificationResult = {
+      timestamp: new Date().toISOString(),
+      status: "skipped",
+      reason: "channelActive is false",
+      commentId: comment.id,
+    };
+    console.error("[bridge] channel push skipped: channelActive is false");
+    return;
+  }
   try {
     await mcpServer.notification({
       method: "notifications/claude/channel",
@@ -321,7 +351,22 @@ async function pushChannelNotification(comment: WebsiteComment): Promise<void> {
         },
       },
     });
+    lastNotificationResult = {
+      timestamp: new Date().toISOString(),
+      status: "sent",
+      commentId: comment.id,
+    };
+    console.error(
+      `[bridge] channel notification sent for comment ${comment.id}`,
+    );
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    lastNotificationResult = {
+      timestamp: new Date().toISOString(),
+      status: "error",
+      reason: msg,
+      commentId: comment.id,
+    };
     console.error("[bridge] channel push failed:", err);
   }
 }
@@ -404,8 +449,11 @@ function startHttpServer(listenPort: number): void {
           return fail("Invalid comment shape — missing required fields");
         store.push(body);
         console.error(`[bridge] comment id=${body.id} url=${body.url}`);
-        pushChannelNotification(body).catch(() => {});
-        return json({ ok: true, id: body.id }, 201);
+        await pushChannelNotification(body);
+        return json(
+          { ok: true, id: body.id, notification: lastNotificationResult },
+          201,
+        );
       }
 
       if (req.method === "POST" && pathname === "/comments/batch") {
@@ -425,6 +473,16 @@ function startHttpServer(listenPort: number): void {
         pushBatchChannelNotification(valid).catch(() => {});
         return json({ ok: true, accepted: valid.length, rejected }, 201);
       }
+
+      if (req.method === "GET" && pathname === "/debug")
+        return json({
+          channelActive,
+          mcpServerExists: mcpServer !== null,
+          skipMcp,
+          lastNotification: lastNotificationResult,
+          storeCount: store.length,
+          pid: process.pid,
+        });
 
       return fail("Not found", 404);
     },
