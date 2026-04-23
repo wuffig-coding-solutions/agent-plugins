@@ -15,10 +15,10 @@ Browser extension  →  POST /comments  →  Bridge (HTTP + MCP stdio)  →  cha
 
 ### Enabling channel interrupts
 
-Channel notifications require Claude Code to be started with the `--channels` flag:
+Channel notifications require Claude Code to be started with the development channels flag (the plugin is not yet on the official channels allowlist):
 
 ```bash
-claude --channels plugin:website-commenter@agent-plugins
+claude --dangerously-load-development-channels plugin:website-commenter@agent-plugins
 ```
 
 Without this flag, the bridge still works but comments won't auto-interrupt — use `/wc-apply` to manually process them.
@@ -26,7 +26,7 @@ Without this flag, the bridge still works but comments won't auto-interrupt — 
 **Recommended:** add a shell alias so you don't have to remember the flag:
 
 ```bash
-alias cc="claude --channels plugin:website-commenter@agent-plugins"
+alias cc="claude --dangerously-load-development-channels plugin:website-commenter@agent-plugins"
 ```
 
 ## Skills

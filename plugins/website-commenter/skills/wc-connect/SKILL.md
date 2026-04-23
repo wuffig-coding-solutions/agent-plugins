@@ -54,11 +54,11 @@ Check the `channelActive` field in the response.
 > To enable auto-interrupt, restart Claude Code with:
 >
 > ```
-> claude --channels plugin:website-commenter@agent-plugins
+> claude --dangerously-load-development-channels plugin:website-commenter@agent-plugins
 > ```
 >
 > Or add a shell alias:
 >
 > ```
-> alias cc="claude --channels plugin:website-commenter@agent-plugins"
+> alias cc="claude --dangerously-load-development-channels plugin:website-commenter@agent-plugins"
 > ```
