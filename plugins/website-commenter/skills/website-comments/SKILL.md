@@ -1,47 +1,58 @@
 ---
 name: website-comments
-description: Fetch and process pending DOM element comments sent from the browser extension. Use when the user says "check website comments", "apply website feedback", or asks about pending comments from the extension.
+description: Fetch and process pending DOM element comments sent from the browser extension. Use when the user says "check website comments", "apply website feedback", or asks about pending comments.
 ---
 
 # Website Comments
 
-You are processing DOM element annotations sent from the browser extension. Each comment targets a specific element on a webpage and describes a change the user wants.
-
-## Step 1 — Fetch pending comments
+## Step 1 — Find the bridge port
 
 ```bash
-curl -s http://localhost:8789/comments
+PORT=$(jq -r '.port // ""' /tmp/claude-wc-bridge.json 2>/dev/null)
+echo "PORT=${PORT}"
 ```
 
-If the result is an empty array `[]`, tell the user there are no pending comments and stop.
+If `PORT` is empty, tell the user:
 
-## Step 2 — Understand the context
+> The Website Commenter bridge is not running. Start it first with `/website-commenter`.
 
-For each comment, you receive:
+Stop here.
+
+## Step 2 — Fetch pending comments
+
+```bash
+curl -s "http://localhost:${PORT}/comments"
+```
+
+If the result is `[]`, tell the user there are no pending comments and stop.
+
+## Step 3 — Understand each comment
+
+For each comment you receive:
 
 - `url` — the page where the element lives
 - `comment` — what the user wants changed
 - `element.selector` — CSS selector targeting the element
-- `element.outerHTML` — the element's current HTML (truncated)
+- `element.outerHTML` — the element's current HTML (truncated to 300 chars)
 - `element.computedStyles` — live computed styles (color, font-size, etc.)
 - `element.tagName`, `element.classNames`, `element.id`
 
-## Step 3 — Apply changes
+## Step 4 — Apply changes
 
 For each comment:
 
-1. Identify the relevant source file in the current project (search by component name, selector, or class)
+1. Identify the relevant source file (search by component name, selector, or class)
 2. Apply the requested change
-3. If a comment is ambiguous, make your best interpretation and note it
+3. If ambiguous, make your best interpretation and note it
 
-Process ALL comments before moving on — do not stop after the first one.
+Process ALL comments before moving on.
 
-## Step 4 — Clear processed comments
+## Step 5 — Clear processed comments
 
 ```bash
-curl -s -X DELETE http://localhost:8789/comments
+curl -s -X DELETE "http://localhost:${PORT}/comments"
 ```
 
-## Step 5 — Report
+## Step 6 — Report
 
-Summarise what you changed, one line per comment. Flag any comments you couldn't action and why.
+Summarise what you changed, one line per comment. Flag any you couldn't action and why.
