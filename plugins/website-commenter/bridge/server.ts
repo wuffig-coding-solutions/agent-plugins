@@ -153,6 +153,14 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
           required: [],
         },
       },
+      {
+        name: "disconnect_bridge",
+        description:
+          "Shuts down this session's bridge server cleanly. " +
+          "The HTTP server stops, the state file is removed, and the process exits. " +
+          "Claude Code will respawn a fresh bridge on the next MCP tool call.",
+        inputSchema: { type: "object", properties: {}, required: [] },
+      },
     ],
   }));
 
@@ -212,6 +220,16 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
       store.splice(0, store.length);
       return {
         content: [{ type: "text", text: `Cleared all ${count} comment(s).` }],
+      };
+    }
+
+    if (name === "disconnect_bridge") {
+      setTimeout(() => {
+        if (!skipStateFile && existsSync(STATE_FILE)) unlinkSync(STATE_FILE);
+        process.exit(0);
+      }, 100);
+      return {
+        content: [{ type: "text", text: "Bridge shutting down." }],
       };
     }
 
