@@ -238,6 +238,29 @@ async function pushChannelNotification(comment: WebsiteComment): Promise<void> {
   }
 }
 
+async function pushBatchChannelNotification(
+  comments: WebsiteComment[],
+): Promise<void> {
+  if (!mcpServer || !channelActive || comments.length === 0) return;
+  const summary = comments
+    .map((c) => `• "${c.comment}" on <${c.element.tagName}> at ${c.url}`)
+    .join("\n");
+  try {
+    await mcpServer.notification({
+      method: "notifications/claude/channel",
+      params: {
+        content: `${comments.length} new website comment(s):\n${summary}`,
+        meta: {
+          count: comments.length,
+          comment_ids: comments.map((c) => c.id).join(","),
+        },
+      },
+    });
+  } catch (err) {
+    console.error("[bridge] batch channel push failed:", err);
+  }
+}
+
 // ── Port resolution ───────────────────────────────────────────────────────────
 
 const portArgIdx = process.argv.indexOf("--port");
@@ -304,9 +327,7 @@ Bun.serve({
       console.error(
         `[bridge] batch accepted=${valid.length} rejected=${rejected}`,
       );
-      if (valid.length > 0) {
-        pushChannelNotification(valid[0]).catch(() => {});
-      }
+      pushBatchChannelNotification(valid).catch(() => {});
       return json({ ok: true, accepted: valid.length, rejected }, 201);
     }
 
@@ -349,6 +370,7 @@ if (!skipMcp && mcpServer) {
     console.error("[bridge] MCP transport closed");
   };
   transport.onerror = (err) => {
+    channelActive = false;
     console.error("[bridge] MCP transport error:", err);
   };
   mcpServer.oninitialized = () => {
