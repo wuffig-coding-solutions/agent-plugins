@@ -1,9 +1,11 @@
 name: Sync plugin SHAs
 
 on:
-  # Triggered by plugin repos when they push to main
-  repository_dispatch:
-    types: [plugin-updated]
+  # Auto-sync on every push to main (ignores marketplace.json-only commits to avoid loops)
+  push:
+    branches: [main]
+    paths-ignore:
+      - ".claude-plugin/marketplace.json"
   # Manual trigger to resync all shas at once
   workflow_dispatch:
 
