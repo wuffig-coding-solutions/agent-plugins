@@ -40,13 +40,13 @@ These must match. If you forget either one, the update won't roll out.
 2. Run tests if applicable
 3. Bump the version in **both** files listed above
 4. Commit and push
-5. Clear the old cache and reload:
+5. **Delete the old cached version** — the installer does not remove old versions automatically, and leaving them causes Claude Code to load stale skills alongside the new ones:
 
 ```bash
 rm -rf ~/.claude/plugins/cache/agent-plugins/<plugin-name>/<old-version>
 ```
 
-Then run `/reload-plugins` in Claude Code.
+6. Run `/reload-plugins` in Claude Code (then restart Claude Code for MCP server changes).
 
 ## Adding a new plugin
 
