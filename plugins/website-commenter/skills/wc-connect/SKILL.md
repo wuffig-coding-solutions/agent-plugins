@@ -1,5 +1,5 @@
 ---
-name: website-commenter
+name: wc-connect
 description: Show the active bridge port so the Firefox extension can connect. Use when the user says "website commenter", "what port", or "connect the extension".
 ---
 
@@ -27,4 +27,4 @@ Tell the user:
 >
 > Once connected, any comment you send from the extension will **immediately interrupt Claude** and apply the change to the codebase — no manual command needed.
 >
-> Use `/website-comments` as a fallback if the automatic interrupt is not firing.
+> Use `/wc-apply` as a fallback if the automatic interrupt is not firing.

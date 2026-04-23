@@ -1,22 +1,19 @@
 ---
-name: website-comments
+name: wc-apply
 description: Fetch and process pending DOM element comments sent from the browser extension. Use when the user says "check website comments", "apply website feedback", or asks about pending comments.
 ---
 
 > **Fallback mode.** This skill manually polls and applies comments. Normally, comments from the browser extension interrupt Claude immediately via the MCP channel without any manual command. Use this skill only if the automatic interrupt is not firing (e.g., after a fresh install before Claude Code has restarted, or if the MCP channel is unavailable).
 
-# Website Comments
+# Website Comments — Apply Pending
 
-## Step 1 — Find the bridge port
+## Step 1 — Get the bridge port
 
-```bash
-PORT=$(jq -r '.port // ""' /tmp/claude-wc-bridge.json 2>/dev/null)
-echo "PORT=${PORT}"
-```
+Call the `get_bridge_port` tool on the `website-commenter` MCP server.
 
-If `PORT` is empty, tell the user:
+If the tool call fails, tell the user:
 
-> The Website Commenter bridge is not running. Start it first with `/website-commenter`.
+> The Website Commenter bridge is not running. Start it first with `/wc-connect`.
 
 Stop here.
 
