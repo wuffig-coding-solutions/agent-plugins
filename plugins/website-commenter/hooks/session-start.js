@@ -3,7 +3,9 @@
 //
 // Runs at each Claude Code session start.
 // The bridge is auto-started by Claude Code via the MCP server registration in plugin.json.
-// This hook just surfaces the active port if the state file is already present.
+// Port is NOT read from the state file here — that file is shared across all sessions and
+// would show the wrong port if multiple Claude Code windows are open.
+// Use /website-commenter to get the correct port for this session via the get_bridge_port MCP tool.
 
 import fs from "node:fs";
 
@@ -12,21 +14,5 @@ try {
   JSON.parse(fs.readFileSync(0, "utf8"));
 } catch {}
 
-const STATE_FILE = "/tmp/claude-wc-bridge.json";
-let additionalContext = "";
-
-if (fs.existsSync(STATE_FILE)) {
-  try {
-    const { port } = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
-    if (port) {
-      additionalContext =
-        `Website Commenter bridge is active on port ${port}. ` +
-        `Enter this port in the Firefox extension to connect. ` +
-        `Comments from the extension will interrupt Claude immediately via the MCP channel.`;
-    }
-  } catch {}
-}
-
-if (additionalContext) {
-  process.stdout.write(JSON.stringify({ additionalContext }));
-}
+// No additionalContext: port discovery is deferred to the /website-commenter skill,
+// which calls get_bridge_port on this session's bridge via MCP (session-scoped, always correct).

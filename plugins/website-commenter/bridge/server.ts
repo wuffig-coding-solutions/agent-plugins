@@ -115,6 +115,13 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
   mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
+        name: "get_bridge_port",
+        description:
+          "Returns the HTTP port this bridge is listening on. " +
+          "Use this to tell the user which port to enter in the browser extension.",
+        inputSchema: { type: "object", properties: {}, required: [] },
+      },
+      {
         name: "get_website_comments",
         description:
           "Returns all pending website comments from the browser extension. " +
@@ -151,6 +158,12 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
 
   mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+
+    if (name === "get_bridge_port") {
+      return {
+        content: [{ type: "text", text: String(port) }],
+      };
+    }
 
     if (name === "get_website_comments") {
       const limit = typeof args?.limit === "number" ? args.limit : undefined;
