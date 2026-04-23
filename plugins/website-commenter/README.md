@@ -66,7 +66,7 @@ The popup shows **"Connected · ⚡ Channel active"** when the MCP handshake is 
 
 ## Development workflow
 
-> **Important:** The plugin cache is keyed by version number, not SHA. If you only update the SHA in `marketplace.json` without bumping the version, `/reload-plugins` will silently skip the re-fetch.
+> **Important:** The plugin cache is keyed by version number. If you don't bump the version, `/reload-plugins` will silently skip the re-fetch.
 
 ### Making changes
 
@@ -76,9 +76,6 @@ The popup shows **"Connected · ⚡ Channel active"** when the MCP handshake is 
    - `plugins/website-commenter/.claude-plugin/plugin.json` → `"version"`
    - `.claude-plugin/marketplace.json` → `"version"` for the `website-commenter` entry
 4. Commit and push
-5. Copy the new commit SHA
-6. Update `"sha"` in `.claude-plugin/marketplace.json` to the new SHA
-7. Commit and push again
 
 ### Reloading the plugin in Claude Code
 
@@ -88,8 +85,6 @@ rm -rf ~/.claude/plugins/cache/agent-plugins/website-commenter/<old-version>
 ```
 
 Then run `/reload-plugins` in Claude Code.
-
-> The command is `/reload-plugins`, not `/plugins-reload`.
 
 ### Versioning convention
 
