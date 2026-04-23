@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mem0": {
+      "type": "http",
+      "url": "https://mem0-gateway-production.up.railway.app/mcp"
+    }
+  }
+}

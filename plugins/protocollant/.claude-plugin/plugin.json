@@ -1,0 +1,10 @@
+{
+  "name": "protocollant",
+  "description": "Automatically maintains a structured knowledge base in docs/ and keeps CLAUDE.md in sync. Claude is briefed at session start via a routing table injected by the SessionStart hook.",
+  "version": "1.0.0",
+  "author": {
+    "name": "niklas"
+  },
+  "repository": "https://github.com/wuffig-coding-solutions/protocollant",
+  "license": "MIT"
+}

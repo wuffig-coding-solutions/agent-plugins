@@ -1,0 +1,10 @@
+{
+  "name": "mem0",
+  "description": "Persistent memory for Claude Code via mem0. Fully implicit — no manual commands. Stores preferences, architecture facts and known issues across projects using Qdrant (vector) + optional Neo4j (graph).",
+  "version": "0.5.0",
+  "author": {
+    "name": "Niklas"
+  },
+  "repository": "https://github.com/wuffig-coding-solutions/mem0-plugin",
+  "license": "MIT"
+}

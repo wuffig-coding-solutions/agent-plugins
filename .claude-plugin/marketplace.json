@@ -17,10 +17,10 @@
       },
       "source": {
         "source": "git-subdir",
-        "url": "https://github.com/wuffig-coding-solutions/protocollant.git",
-        "path": ".",
+        "url": "https://github.com/wuffig-coding-solutions/agent-plugins.git",
+        "path": "plugins/protocollant",
         "ref": "main",
-        "sha": "8a20c0b9096dc8da51e131f37ae0c1c850df7411"
+        "sha": "PLACEHOLDER"
       }
     },
     {
@@ -32,15 +32,15 @@
       },
       "source": {
         "source": "git-subdir",
-        "url": "https://github.com/wuffig-coding-solutions/mem0-plugin.git",
-        "path": ".",
+        "url": "https://github.com/wuffig-coding-solutions/agent-plugins.git",
+        "path": "plugins/mem0",
         "ref": "main",
-        "sha": "b76ee10bcadc83bfac95d6c80a4e7c6a752730a1"
+        "sha": "PLACEHOLDER"
       }
     },
     {
       "name": "website-commenter",
-      "description": "Browser extension bridge that lets you comment on DOM elements and send feedback directly to Claude Code. Starts an HTTP bridge server automatically on session start.",
+      "description": "Browser extension bridge that lets you comment on DOM elements and send feedback directly to Claude Code. Auto-spawns a bridge server via MCP — channel notifications interrupt Claude immediately when comments arrive.",
       "version": "1.0.0",
       "author": {
         "name": "Niklas-Flaig"
@@ -50,7 +50,7 @@
         "url": "https://github.com/wuffig-coding-solutions/agent-plugins.git",
         "path": "plugins/website-commenter",
         "ref": "main",
-        "sha": "0c760601e56caedbc31922ed2a1c258fb9220df2"
+        "sha": "PLACEHOLDER"
       }
     }
   ]
