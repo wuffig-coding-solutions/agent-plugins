@@ -11,7 +11,7 @@
     {
       "name": "protocollant",
       "description": "Automatically maintains a structured knowledge base in docs/ and keeps CLAUDE.md in sync.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": {
         "name": "Niklas-Flaig"
       },
@@ -25,7 +25,7 @@
     {
       "name": "mem0",
       "description": "Persistent memory for Claude Code via mem0. Fully implicit — no manual commands.",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "author": {
         "name": "Niklas-Flaig"
       },

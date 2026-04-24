@@ -196,6 +196,12 @@ You are performing a one-time knowledge base initialization for this project.
 
 4. Fill in whatever you can determine from the codebase scan into the relevant files. For `architecture.md`, try to populate the Module Map and Key Layers based on the directory structure. For `dependencies.md`, list the key runtime dependencies from the package manifest with a brief note on what each is for.
 
-5. Run @doc-updater to patch `CLAUDE.md` with the full routing table.
+5. If a `.gitignore` file exists at the project root, check whether `.protocoll-queue.local` is already listed. If not, append this line to the file:
 
-6. Report: list which files were created vs already existed.
+   ```
+   .claude/.protocoll-queue.local
+   ```
+
+6. Run @doc-updater to patch `CLAUDE.md` with the full routing table.
+
+7. Report: list which files were created vs already existed, and whether `.gitignore` was updated.

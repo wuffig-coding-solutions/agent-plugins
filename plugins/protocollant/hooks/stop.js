@@ -19,7 +19,7 @@ try {
   process.exit(0);
 }
 const cwd = input.cwd || process.cwd();
-const queueFile = path.join(cwd, ".claude", "doc-queue.json");
+const queueFile = path.join(cwd, ".claude", ".protocoll-queue.local");
 
 if (!fs.existsSync(queueFile)) process.exit(0);
 
@@ -40,6 +40,9 @@ const docList = queue
   })
   .join("\n");
 
+const docNames = queue.map((item) => item.doc).join(", ");
+const docCount = queue.length;
+
 const message = `📝 **Doc update pending** (protocollant plugin)
 
 The following knowledge docs may be out of date due to changes made this session:
@@ -47,7 +50,10 @@ The following knowledge docs may be out of date due to changes made this session
 ${docList}
 
 Please delegate to @doc-updater now to update these files and sync CLAUDE.md.
-@doc-updater will read the queue, update each doc with a concise structured entry, and clear the queue when done.`;
+@doc-updater will read the queue, update each doc with a concise structured entry, and clear the queue when done.
+
+**After @doc-updater finishes**, print this exact one-liner to the user (no extra text around it):
+"Protocollant: Done — ${docCount} doc(s) updated: ${docNames}"`;
 
 process.stdout.write(
   JSON.stringify({

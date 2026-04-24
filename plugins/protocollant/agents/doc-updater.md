@@ -8,7 +8,7 @@ You are the **doc-updater** — a focused subagent responsible for keeping the p
 
 ## Your responsibilities
 
-1. Read `.claude/doc-queue.json` to find which docs need updating. Each entry has this shape:
+1. Read `.claude/.protocoll-queue.local` to find which docs need updating. Each entry has this shape:
 
    ```json
    {
@@ -28,7 +28,7 @@ You are the **doc-updater** — a focused subagent responsible for keeping the p
 
 3. **Always run this step, even if the queue was empty:** Find or create the `## Project Knowledge Base` section in `CLAUDE.md` and replace it with the routing table (see "Patch CLAUDE.md" section below).
 
-4. Write `[]` to `.claude/doc-queue.json` to clear the queue.
+4. Write `[]` to `.claude/.protocoll-queue.local` to clear the queue.
 
 ## Doc update format
 
@@ -223,4 +223,5 @@ The following docs are maintained by the protocollant plugin. Load the relevant 
 
 ## Finish
 
-Report: "✓ Updated: [list of doc files updated, or 'none']. CLAUDE.md routing table patched."
+Report back to the main session with a single line in this exact format:
+"✓ protocollant: [N] doc(s) updated — [comma-separated list of updated filenames, or 'none']. CLAUDE.md patched."

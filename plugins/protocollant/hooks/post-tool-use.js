@@ -26,7 +26,7 @@ const changedFile = toolInput.path || toolInput.file_path || "";
 
 if (!changedFile) process.exit(0);
 
-const queueFile = path.join(cwd, ".claude", "doc-queue.json");
+const queueFile = path.join(cwd, ".claude", ".protocoll-queue.local");
 const rel = path.relative(cwd, changedFile);
 
 // Ignore files outside the project root

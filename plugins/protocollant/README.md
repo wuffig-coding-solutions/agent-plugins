@@ -4,14 +4,30 @@ Automatically maintains a structured knowledge base in `docs/` and keeps `CLAUDE
 
 ## How it works
 
-| Mechanism                   | What it does                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------------ |
-| **SessionStart hook**       | Injects a routing table into Claude's context: which doc to read for which task type |
-| **PostToolUse hook**        | Detects architecture/API/bug/dep-relevant file edits and queues a doc update         |
-| **Stop hook**               | If the queue is non-empty, tells Claude to call `@doc-updater` before finishing      |
-| **`@doc-updater` subagent** | Writes structured entries to the relevant docs, then patches `CLAUDE.md`             |
-| **`/docs-init` command**    | One-time scaffold of all doc files from a codebase scan                              |
-| **`/docs-sync` command**    | Manual full audit — use after major refactors                                        |
+| Mechanism                   | What it does                                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------------- |
+| **SessionStart hook**       | Prints a tracer notice, then injects a routing table into Claude's context                   |
+| **PostToolUse hook**        | Detects architecture/API/bug/dep-relevant file edits and queues a doc update                 |
+| **Stop hook**               | If the queue is non-empty, tells Claude to call `@doc-updater` and print a summary when done |
+| **`@doc-updater` subagent** | Writes structured entries to the relevant docs, then patches `CLAUDE.md`                     |
+| **`/docs-init` command**    | One-time scaffold of all doc files from a codebase scan; also patches `.gitignore`           |
+| **`/docs-sync` command**    | Manual full audit — use after major refactors                                                |
+
+### Session start notice
+
+Every time you open a Claude session in a project with protocollant active, this line appears in your terminal:
+
+```
+This conversation is traced by protocollant by Niklas Flaig.
+```
+
+### Update summary
+
+After each session where docs were updated, the main Claude session prints a one-liner:
+
+```
+Protocollant: Done — 2 doc(s) updated: architecture.md, dependencies.md
+```
 
 ## Managed docs
 
@@ -47,7 +63,7 @@ This plugin is distributed via [agent-plugins](https://github.com/wuffig-coding-
 
 This fetches the plugin from GitHub, registers the hooks, and makes `@doc-updater`, `/docs-init`, and `/docs-sync` available globally.
 
-### 3. Initialize docs for a project
+### 2. Initialize docs for a project
 
 Open a session in the project you want to document, then run:
 
@@ -55,7 +71,15 @@ Open a session in the project you want to document, then run:
 /docs-init
 ```
 
-This scans the codebase and creates all 15 doc files under `docs/`. After that, documentation updates happen automatically — no further setup needed.
+This scans the codebase, creates all 15 doc files under `docs/`, and appends `.claude/.protocoll-queue.local` to `.gitignore` if one exists. After that, documentation updates happen automatically — no further setup needed.
+
+## Internal files
+
+| File                             | Purpose                                                |
+| -------------------------------- | ------------------------------------------------------ |
+| `.claude/.protocoll-queue.local` | Temporary queue of pending doc updates (not committed) |
+
+This file is ephemeral — it is cleared at every session start and after `@doc-updater` runs. Add it to `.gitignore` (or run `/docs-init` which does this automatically).
 
 ## Scope
 

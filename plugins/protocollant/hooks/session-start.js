@@ -20,7 +20,7 @@ try {
 }
 const cwd = input.cwd || process.cwd();
 const docsDir = path.join(cwd, "docs");
-const queueFile = path.join(cwd, ".claude", "doc-queue.json");
+const queueFile = path.join(cwd, ".claude", ".protocoll-queue.local");
 
 // Doc definitions: filename → { title, loadWhen, updateOn }
 const DOC_DEFINITIONS = {
@@ -157,6 +157,11 @@ const DOC_DEFINITIONS = {
     updateOn: [],
   },
 };
+
+// Print tracer notice to stderr so it appears in the terminal at session start
+process.stderr.write(
+  "\x1b[2mThis conversation is traced by protocollant by Niklas Flaig.\x1b[0m\n",
+);
 
 // --- Ensure docs/ exists ---
 if (!fs.existsSync(docsDir)) {
