@@ -58,7 +58,7 @@ for wc_sf in /tmp/claude-wc-bridge-*.json; do
   fi
 done
 if [ -n "$wc_ports" ]; then
-  wc_indicator=$(printf '\033[36m⬡ :%s\033[0m   ' "$wc_ports")
+  wc_indicator=$(printf '\033[36mwc:%s\033[0m   ' "$wc_ports")
 fi
 out="${wc_indicator}${out}"
 # ──────────────────────────────────────────────────────────────────────────────
@@ -70,4 +70,4 @@ out="${wc_indicator}${out}"
 
 Tell the user:
 
-> Bridge indicator added to your status line. You should see **⬡ :PORT** in cyan on the left side of the bar when this session's bridge is running. Each Claude Code window shows only its own bridge port. Restart Claude Code for it to take effect.
+> Bridge indicator added to your status line. You should see **wc:PORT** in cyan on the left side of the bar when this session's bridge is running. Each Claude Code window shows only its own bridge port. Restart Claude Code for it to take effect.
