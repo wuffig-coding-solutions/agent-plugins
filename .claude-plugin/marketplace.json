@@ -39,7 +39,7 @@
     {
       "name": "website-commenter",
       "description": "Browser extension bridge that lets you comment on DOM elements and send feedback directly to Claude Code. Run /wc-connect to start the bridge — channel notifications interrupt Claude immediately when comments arrive.",
-      "version": "1.7.1",
+      "version": "1.8.0",
       "author": {
         "name": "Niklas-Flaig"
       },

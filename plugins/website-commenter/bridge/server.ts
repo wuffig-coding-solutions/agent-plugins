@@ -6,9 +6,12 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { findAvailablePort } from "./find-port";
-import { existsSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, writeFileSync, unlinkSync, readFileSync } from "node:fs";
 
 export const STATE_FILE = `/tmp/claude-wc-bridge-${process.pid}.json`;
+
+// Shared across sessions: lets a new session adopt a bridge that outlived the previous MCP transport.
+export const PERSISTENT_STATE_FILE = "/tmp/claude-wc-bridge-persistent.json";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -184,7 +187,7 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
     const { name, arguments: args } = request.params;
 
     if (name === "get_bridge_port") {
-      if (!httpServer) {
+      if (!httpServer && !isAdopted) {
         return {
           content: [
             {
@@ -251,6 +254,46 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
     }
 
     if (name === "disconnect_bridge") {
+      if (!httpServer && !isAdopted) {
+        return {
+          content: [{ type: "text", text: "Bridge is not running." }],
+          isError: true,
+        };
+      }
+
+      if (isAdopted) {
+        // The HTTP server lives in an orphan process — kill it via the stored PID.
+        try {
+          const state = JSON.parse(
+            readFileSync(PERSISTENT_STATE_FILE, "utf8") as string,
+          ) as { pid?: number };
+          if (typeof state.pid === "number") {
+            process.kill(state.pid, "SIGKILL");
+          }
+        } catch {
+          // orphan may have already exited
+        }
+        isAdopted = false;
+        port = 0;
+        if (!skipStateFile) {
+          try {
+            if (existsSync(PERSISTENT_STATE_FILE))
+              unlinkSync(PERSISTENT_STATE_FILE);
+          } catch {}
+          try {
+            if (existsSync(STATE_FILE)) unlinkSync(STATE_FILE);
+          } catch {}
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Bridge stopped (orphan server terminated). Use connect_bridge to restart.",
+            },
+          ],
+        };
+      }
+
       stopHttpServer();
       return {
         content: [
@@ -263,7 +306,7 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
     }
 
     if (name === "connect_bridge") {
-      if (httpServer) {
+      if (httpServer || isAdopted) {
         return {
           content: [
             { type: "text", text: `Bridge already running on port ${port}.` },
@@ -384,11 +427,14 @@ async function pushBatchChannelNotification(
       params: {
         content: `${comments.length} new website comment(s):\n${summary}`,
         meta: {
-          count: comments.length,
+          count: String(comments.length),
           comment_ids: comments.map((c) => c.id).join(","),
         },
       },
     });
+    console.error(
+      `[bridge] batch channel notification sent for ${comments.length} comment(s)`,
+    );
   } catch (err) {
     console.error("[bridge] batch channel push failed:", err);
   }
@@ -398,6 +444,10 @@ async function pushBatchChannelNotification(
 // Port is 0 until connect_bridge is called. The HTTP server does NOT auto-start.
 
 let port = 0;
+
+// True when this bridge session adopted an HTTP server started by a prior session.
+// The server runs in a separate (orphan) process; we just know its port.
+let isAdopted = false;
 
 // ── State file flag ──────────────────────────────────────────────────────────
 
@@ -465,7 +515,10 @@ function startHttpServer(listenPort: number): void {
         console.error(
           `[bridge] batch accepted=${valid.length} rejected=${rejected}`,
         );
-        pushBatchChannelNotification(valid).catch(() => {});
+        // Await the notification so it is guaranteed to be sent before the
+        // response is returned. Fire-and-forget was unreliable in Bun's
+        // request lifecycle.
+        await pushBatchChannelNotification(valid);
         return json({ ok: true, accepted: valid.length, rejected }, 201);
       }
 
@@ -477,6 +530,7 @@ function startHttpServer(listenPort: number): void {
           lastNotification: lastNotificationResult,
           storeCount: store.length,
           pid: process.pid,
+          isAdopted,
         });
 
       return fail("Not found", 404);
@@ -485,6 +539,19 @@ function startHttpServer(listenPort: number): void {
   });
   port = listenPort;
   console.error(`[bridge] listening on port ${port}`);
+
+  // Write persistent state so a future session can adopt this server if we
+  // outlive the current MCP transport (i.e. become an orphan on SIGTERM).
+  if (!skipStateFile) {
+    writeFileSync(
+      PERSISTENT_STATE_FILE,
+      JSON.stringify({
+        port,
+        pid: process.pid,
+        started: new Date().toISOString(),
+      }),
+    );
+  }
 }
 
 function stopHttpServer(): void {
@@ -493,21 +560,101 @@ function stopHttpServer(): void {
     httpServer = null;
     console.error("[bridge] HTTP server stopped");
   }
-  if (!skipStateFile && existsSync(STATE_FILE)) {
-    unlinkSync(STATE_FILE);
+  port = 0;
+  isAdopted = false;
+  if (!skipStateFile) {
+    if (existsSync(STATE_FILE)) unlinkSync(STATE_FILE);
+    if (existsSync(PERSISTENT_STATE_FILE)) unlinkSync(PERSISTENT_STATE_FILE);
   }
 }
 
-// HTTP server is NOT started here. Call connect_bridge (via /wc-connect) to start it.
+// ── Test mode auto-start ──────────────────────────────────────────────────────
+// When WC_NO_MCP=1 (test environment) and --port N is passed, start the HTTP
+// server immediately so tests can talk to it without calling connect_bridge.
+
+if (skipMcp) {
+  const portArgIdx = process.argv.indexOf("--port");
+  if (portArgIdx !== -1) {
+    const testPort = parseInt(process.argv[portArgIdx + 1], 10);
+    if (!isNaN(testPort) && testPort > 0) {
+      startHttpServer(testPort);
+    }
+  }
+}
+
+// HTTP server is NOT started automatically in normal mode.
+// Call connect_bridge (via /wc-connect) to start it.
 
 // ── Cleanup ────────────────────────────────────────────────────────────────────
 
-const cleanup = () => {
+const cleanup = (signal: "SIGTERM" | "SIGINT") => {
+  // Always remove the per-PID state file so the statusline clears immediately.
   if (!skipStateFile && existsSync(STATE_FILE)) unlinkSync(STATE_FILE);
+
+  if (signal === "SIGTERM" && httpServer) {
+    // The MCP transport is closing but WE own a running HTTP server.
+    // Keep the process alive as an orphan so the extension stays connected.
+    // The persistent state file is already written — the next Claude Code
+    // session will adopt this server automatically.
+    channelActive = false;
+    console.error(
+      `[bridge] SIGTERM: MCP session ended, HTTP server persisting on port ${port} (PID ${process.pid})`,
+    );
+    return; // Do NOT call process.exit — let Bun's event loop keep the server running.
+  }
+
+  // SIGINT (Ctrl-C), or SIGTERM with no HTTP server running — full shutdown.
+  if (httpServer) {
+    httpServer.stop(true);
+    httpServer = null;
+  }
+  if (!skipStateFile && existsSync(PERSISTENT_STATE_FILE)) {
+    unlinkSync(PERSISTENT_STATE_FILE);
+  }
   process.exit(0);
 };
-process.on("SIGTERM", cleanup);
-process.on("SIGINT", cleanup);
+
+process.on("SIGTERM", () => cleanup("SIGTERM"));
+process.on("SIGINT", () => cleanup("SIGINT"));
+
+// ── Startup: adopt an existing orphan HTTP server ─────────────────────────────
+// If a previous bridge left a persistent state file, try to health-check the
+// server it left behind. If it is still alive, adopt its port so this session
+// can report the correct port without starting a new server.
+
+if (!skipMcp && !skipStateFile) {
+  try {
+    const raw = readFileSync(PERSISTENT_STATE_FILE, "utf8");
+    const state = JSON.parse(raw) as { port?: number; pid?: number };
+    if (typeof state.port === "number" && state.port > 0) {
+      const res = await fetch(`http://localhost:${state.port}/health`, {
+        signal: AbortSignal.timeout(1000),
+      }).catch(() => null);
+      if (res && res.ok) {
+        port = state.port;
+        isAdopted = true;
+        // Write a per-PID state file so the statusline shows the adopted port.
+        writeFileSync(
+          STATE_FILE,
+          JSON.stringify({
+            port,
+            pid: process.pid,
+            started: new Date().toISOString(),
+          }),
+        );
+        console.error(
+          `[bridge] adopted existing HTTP server on port ${port} (orphan PID ${state.pid ?? "?"})`,
+        );
+      } else {
+        // Stale persistent state — the old server is gone.
+        unlinkSync(PERSISTENT_STATE_FILE);
+        console.error("[bridge] stale persistent state file removed");
+      }
+    }
+  } catch {
+    // No state file, parse error, or FS error — normal fresh start.
+  }
+}
 
 // ── MCP transport (after HTTP is ready) ───────────────────────────────────────
 
