@@ -5,7 +5,7 @@ description: Show the active bridge port so the browser extension can connect. U
 
 # Website Commenter — Connect the Extension
 
-The bridge starts automatically when Claude Code launches (via MCP). To find the port for **this session**:
+The bridge does **not** start automatically — it only starts when you explicitly run this skill. To connect the extension for **this session**:
 
 ## Step 1 — Ensure the bridge is running
 

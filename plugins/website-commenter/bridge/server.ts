@@ -394,15 +394,10 @@ async function pushBatchChannelNotification(
   }
 }
 
-// ── Port resolution ───────────────────────────────────────────────────────────
+// ── Port state ────────────────────────────────────────────────────────────────
+// Port is 0 until connect_bridge is called. The HTTP server does NOT auto-start.
 
-const portArgIdx = process.argv.indexOf("--port");
-const portArg =
-  portArgIdx !== -1 ? parseInt(process.argv[portArgIdx + 1], 10) : NaN;
-let port =
-  !isNaN(portArg) && portArg > 0 && portArg < 65536
-    ? portArg
-    : await findAvailablePort();
+let port = 0;
 
 // ── State file flag ──────────────────────────────────────────────────────────
 
@@ -503,18 +498,7 @@ function stopHttpServer(): void {
   }
 }
 
-startHttpServer(port);
-
-if (!skipStateFile) {
-  writeFileSync(
-    STATE_FILE,
-    JSON.stringify({
-      port,
-      pid: process.pid,
-      started: new Date().toISOString(),
-    }),
-  );
-}
+// HTTP server is NOT started here. Call connect_bridge (via /wc-connect) to start it.
 
 // ── Cleanup ────────────────────────────────────────────────────────────────────
 
