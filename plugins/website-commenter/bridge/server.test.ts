@@ -7,6 +7,7 @@ import {
   describe,
 } from "bun:test";
 import fs from "node:fs";
+import { syncFromOrphan } from "./server";
 
 const TEST_PORT = 8788;
 const BASE = `http://localhost:${TEST_PORT}`;
@@ -215,6 +216,15 @@ let hookProc: ReturnType<typeof Bun.spawn>;
 
 describe("hook-driven busy state (isClaudeBusy via /health)", () => {
   beforeAll(async () => {
+    // Kill any stale process already on this port (orphan from a prior test run).
+    const staleDebug = await fetch(`${HOOK_BASE}/debug`, {
+      signal: AbortSignal.timeout(500),
+    }).catch(() => null);
+    if (staleDebug?.ok) {
+      const staleInfo = (await staleDebug.json()) as { pid?: number };
+      if (typeof staleInfo.pid === "number") process.kill(staleInfo.pid, 9);
+      await Bun.sleep(100);
+    }
     hookProc = Bun.spawn(
       ["bun", import.meta.dir + "/server.ts", "--port", String(HOOK_PORT)],
       {
@@ -225,22 +235,20 @@ describe("hook-driven busy state (isClaudeBusy via /health)", () => {
     );
     await Bun.sleep(500);
     // Verify the server we spawned is actually serving on HOOK_PORT.
-    // If a stale server from a prior run occupies the port, our spawn will fail
-    // silently and the stale server would answer with a different ppid.
     const debugRes = await fetch(`${HOOK_BASE}/debug`).catch(() => null);
     if (!debugRes || !debugRes.ok)
       throw new Error(`Hook server failed to start on port ${HOOK_PORT}`);
-    const debug = await debugRes.json();
+    const debug = (await debugRes.json()) as { pid?: number };
     if (debug.pid !== hookProc.pid) {
-      hookProc.kill();
+      hookProc.kill(9);
       throw new Error(
-        `Port ${HOOK_PORT} is occupied by a stale server (pid ${debug.pid}, expected ${hookProc.pid}). Kill it and re-run.`,
+        `Port ${HOOK_PORT} still occupied after killing stale server (pid ${debug.pid}, expected ${hookProc.pid}).`,
       );
     }
   });
 
   afterAll(() => {
-    hookProc.kill();
+    hookProc.kill(9); // SIGKILL so the server exits immediately instead of becoming an orphan
     try {
       fs.unlinkSync(HOOK_STATE_FILE);
     } catch {}
@@ -315,5 +323,95 @@ describe("hook-driven busy state (isClaudeBusy via /health)", () => {
     const bodyWithFile = await resWithFile.json();
     expect(typeof bodyWithFile.flagAge).toBe("number");
     expect(bodyWithFile.flagAge).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ── Bug 1: persistent state file marks non-MCP servers ───────────────────────
+// A server started with WC_NO_MCP=1 must write isMcp:false to the persistent
+// state file so that a new real MCP session can skip adopting it as an orphan.
+
+const PERSISTENT_STATE_PATH = "/tmp/claude-wc-bridge-persistent.json";
+const NON_MCP_PORT = 8790;
+const NON_MCP_BASE = `http://localhost:${NON_MCP_PORT}`;
+let nonMcpProc: ReturnType<typeof Bun.spawn>;
+
+describe("persistent state file marks non-MCP servers", () => {
+  beforeAll(async () => {
+    // Kill any stale process already on this port (orphan from a prior test run).
+    const stale = await fetch(`http://localhost:${NON_MCP_PORT}/debug`, {
+      signal: AbortSignal.timeout(500),
+    }).catch(() => null);
+    if (stale?.ok) {
+      const debug = (await stale.json()) as { pid?: number };
+      if (typeof debug.pid === "number") process.kill(debug.pid, 9);
+      await Bun.sleep(100);
+    }
+    try {
+      fs.unlinkSync(PERSISTENT_STATE_PATH);
+    } catch {}
+    nonMcpProc = Bun.spawn(
+      ["bun", import.meta.dir + "/server.ts", "--port", String(NON_MCP_PORT)],
+      {
+        stdio: ["ignore", "ignore", "ignore"],
+        env: { ...process.env, WC_NO_MCP: "1" }, // no WC_NO_STATE_FILE — must write persistent file
+      },
+    );
+    await Bun.sleep(500);
+  });
+
+  afterAll(() => {
+    nonMcpProc.kill(9); // SIGKILL so the server exits immediately instead of becoming an orphan
+    try {
+      fs.unlinkSync(PERSISTENT_STATE_PATH);
+    } catch {}
+  });
+
+  test("persistent state file has isMcp:false for a WC_NO_MCP=1 server", () => {
+    const raw = JSON.parse(fs.readFileSync(PERSISTENT_STATE_PATH, "utf8"));
+    expect(raw.isMcp).toBe(false);
+  });
+});
+
+// ── Bug 2: syncFromOrphan fetches and deduplicates comments ──────────────────
+// Uses the main TEST_PORT server (started in the top-level beforeAll) as a
+// stand-in for an orphan HTTP server.
+
+describe("syncFromOrphan", () => {
+  beforeEach(async () => {
+    await fetch(`${BASE}/comment`, { method: "DELETE" });
+  });
+
+  test("returns new comments and tracks their IDs in seenIds", async () => {
+    await fetch(`${BASE}/comment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "send-comment", comment: validComment }),
+    });
+
+    const seenIds = new Set<string>();
+    const newComments = await syncFromOrphan(BASE, seenIds);
+
+    expect(newComments).toHaveLength(1);
+    expect(newComments[0].id).toBe(validComment.id);
+    expect(seenIds.has(validComment.id)).toBe(true);
+  });
+
+  test("does not return already-seen comments", async () => {
+    await fetch(`${BASE}/comment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "send-comment", comment: validComment }),
+    });
+
+    const seenIds = new Set<string>([validComment.id]);
+    const newComments = await syncFromOrphan(BASE, seenIds);
+
+    expect(newComments).toHaveLength(0);
+  });
+
+  test("returns empty array when orphan server is unreachable", async () => {
+    const seenIds = new Set<string>();
+    const newComments = await syncFromOrphan("http://localhost:9999", seenIds);
+    expect(newComments).toHaveLength(0);
   });
 });

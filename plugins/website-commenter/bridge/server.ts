@@ -327,6 +327,7 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
         } catch {
           // orphan may have already exited
         }
+        stopOrphanPoller();
         isAdopted = false;
         port = 0;
         if (!skipStateFile) {
@@ -570,12 +571,69 @@ async function flushBacklog(): Promise<void> {
   if (backlog.length > 0) startBacklogPoller();
 }
 
+// ── Orphan adoption poller ────────────────────────────────────────────────────
+// When this session adopted an orphan HTTP server, the orphan's MCP transport is
+// dead so it can't fire channel notifications itself. We poll the orphan's
+// /comment endpoint and relay any new comments through our own live MCP channel.
+
+export async function syncFromOrphan(
+  baseUrl: string,
+  seenIds: Set<string>,
+): Promise<WebsiteComment[]> {
+  try {
+    const res = await fetch(`${baseUrl}/comment`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return [];
+    const raw = (await res.json()) as unknown[];
+    const newComments: WebsiteComment[] = [];
+    for (const item of raw) {
+      if (!isValidComment(item) || seenIds.has(item.id)) continue;
+      seenIds.add(item.id);
+      newComments.push(item);
+    }
+    return newComments;
+  } catch {
+    return [];
+  }
+}
+
+let orphanPoller: ReturnType<typeof setInterval> | null = null;
+const adoptedSeenIds = new Set<string>();
+
+function startOrphanPoller(orphanPort: number): void {
+  if (orphanPoller) return;
+  const orphanBase = `http://localhost:${orphanPort}`;
+  orphanPoller = setInterval(async () => {
+    const newComments = await syncFromOrphan(orphanBase, adoptedSeenIds);
+    for (const c of newComments) {
+      store.push(c);
+      await pushChannelNotification(c);
+    }
+    if (newComments.length > 0) {
+      console.error(
+        `[bridge] orphan poll: synced ${newComments.length} new comment(s)`,
+      );
+    }
+  }, 2000);
+  console.error(`[bridge] orphan poll started for ${orphanBase}`);
+}
+
+function stopOrphanPoller(): void {
+  if (orphanPoller) {
+    clearInterval(orphanPoller);
+    orphanPoller = null;
+    adoptedSeenIds.clear();
+    console.error("[bridge] orphan poll stopped");
+  }
+}
+
 // ── Port state ────────────────────────────────────────────────────────────────
 // Port is 0 until connect_bridge is called. The HTTP server does NOT auto-start.
 
 let port = 0;
 
-// True when this bridge session adopted an HTTP server started by a prior session.
+// True when this session adopted an HTTP server started by a prior session.
 // The server runs in a separate (orphan) process; we just know its port.
 let isAdopted = false;
 
@@ -768,6 +826,7 @@ function startHttpServer(listenPort: number): void {
       JSON.stringify({
         port,
         pid: process.pid,
+        isMcp: !skipMcp,
         started: new Date().toISOString(),
       }),
     );
@@ -851,8 +910,17 @@ process.on("SIGINT", () => cleanup("SIGINT"));
 if (!skipMcp && !skipStateFile) {
   try {
     const raw = readFileSync(PERSISTENT_STATE_FILE, "utf8");
-    const state = JSON.parse(raw) as { port?: number; pid?: number };
-    if (typeof state.port === "number" && state.port > 0) {
+    const state = JSON.parse(raw) as {
+      port?: number;
+      pid?: number;
+      isMcp?: boolean;
+    };
+    if (state.isMcp === false) {
+      console.error(
+        "[bridge] skipping adoption of non-MCP orphan (test server)",
+      );
+      unlinkSync(PERSISTENT_STATE_FILE);
+    } else if (typeof state.port === "number" && state.port > 0) {
       const res = await fetch(`http://localhost:${state.port}/health`, {
         signal: AbortSignal.timeout(1000),
       }).catch(() => null);
@@ -877,6 +945,8 @@ if (!skipMcp && !skipStateFile) {
           body: JSON.stringify({ active: true }),
           signal: AbortSignal.timeout(1000),
         }).catch(() => {});
+        // Relay comments from the orphan through our live MCP channel.
+        startOrphanPoller(port);
       } else {
         // Stale persistent state — the old server is gone.
         unlinkSync(PERSISTENT_STATE_FILE);
