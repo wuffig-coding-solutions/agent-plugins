@@ -6,9 +6,26 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { findAvailablePort } from "./find-port";
-import { existsSync, writeFileSync, unlinkSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  writeFileSync,
+  unlinkSync,
+  readFileSync,
+  renameSync,
+} from "node:fs";
 
-export const STATE_FILE = `/tmp/claude-wc-bridge-${process.pid}.json`;
+export const STATE_FILE = `/tmp/claude-wc-bridge-${process.ppid}.json`;
+
+function atomicWriteStateFile(patch: Record<string, unknown>): void {
+  if (skipStateFile) return;
+  let current: Record<string, unknown> = {};
+  try {
+    current = JSON.parse(readFileSync(STATE_FILE, "utf8"));
+  } catch {}
+  const tmp = STATE_FILE + ".tmp";
+  writeFileSync(tmp, JSON.stringify({ ...current, ...patch }));
+  renameSync(tmp, STATE_FILE);
+}
 
 // Shared across sessions: lets a new session adopt a bridge that outlived the previous MCP transport.
 export const PERSISTENT_STATE_FILE = "/tmp/claude-wc-bridge-persistent.json";
@@ -350,16 +367,12 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
           ? args.port
           : await findAvailablePort();
       startHttpServer(requestedPort);
-      if (!skipStateFile) {
-        writeFileSync(
-          STATE_FILE,
-          JSON.stringify({
-            port,
-            pid: process.pid,
-            started: new Date().toISOString(),
-          }),
-        );
-      }
+      atomicWriteStateFile({
+        port,
+        bridgePid: process.pid,
+        claudePid: process.ppid,
+        started: new Date().toISOString(),
+      });
       return {
         content: [{ type: "text", text: `Bridge started on port ${port}.` }],
       };
@@ -475,6 +488,43 @@ async function pushBatchChannelNotification(
 // ── Backlog helpers ────────────────────────────────────────────────────────────
 
 const BUSY_TIMEOUT_MS = 120_000;
+const STALE_BUSY_MS = 5 * 60 * 1000;
+
+function isClaudeBusy(): boolean | null {
+  if (skipStateFile) return null;
+  try {
+    const raw = readFileSync(STATE_FILE, "utf8");
+    const flag = JSON.parse(raw) as { busy?: boolean; busyTs?: string };
+    if (typeof flag.busy !== "boolean") return null;
+    if (
+      flag.busyTs &&
+      Date.now() - new Date(flag.busyTs).getTime() > STALE_BUSY_MS
+    )
+      return false;
+    return flag.busy;
+  } catch {
+    return null;
+  }
+}
+
+function shouldBacklog(): boolean {
+  const hookSignal = isClaudeBusy();
+  return hookSignal !== null ? hookSignal : claudeBusy;
+}
+
+let backlogPoller: ReturnType<typeof setInterval> | null = null;
+
+function startBacklogPoller(): void {
+  if (backlogPoller) return;
+  backlogPoller = setInterval(async () => {
+    if (backlog.length === 0) {
+      clearInterval(backlogPoller!);
+      backlogPoller = null;
+      return;
+    }
+    if (!shouldBacklog()) await flushBacklog();
+  }, 1000);
+}
 
 function setBusy(): void {
   claudeBusy = true;
@@ -512,6 +562,7 @@ async function flushBacklog(): Promise<void> {
     await pushBatchChannelNotification(stash);
   }
   setBusy();
+  if (backlog.length > 0) startBacklogPoller();
 }
 
 // ── Port state ────────────────────────────────────────────────────────────────
@@ -548,6 +599,18 @@ function startHttpServer(listenPort: number): void {
           claudeBusy,
           port,
           channelActive,
+          hookBusy: isClaudeBusy(),
+          flagAge: (() => {
+            try {
+              const raw = readFileSync(STATE_FILE, "utf8");
+              const f = JSON.parse(raw) as { busyTs?: string };
+              return f.busyTs
+                ? Math.round((Date.now() - new Date(f.busyTs).getTime()) / 1000)
+                : null;
+            } catch {
+              return null;
+            }
+          })(),
         });
 
       if (req.method === "GET" && pathname === "/comment")
@@ -577,8 +640,9 @@ function startHttpServer(listenPort: number): void {
         const comment = (body as Record<string, unknown>).comment;
         if (!isValidComment(comment))
           return fail("Invalid comment shape — missing required fields");
-        if (channelActive && claudeBusy) {
+        if (channelActive && shouldBacklog()) {
           backlog.push([comment]);
+          startBacklogPoller();
           console.error(
             `[bridge] comment id=${comment.id} queued to backlog (depth ${backlog.length})`,
           );
@@ -619,8 +683,9 @@ function startHttpServer(listenPort: number): void {
         const raw = (body as Record<string, unknown>).comments as unknown[];
         const valid = raw.filter(isValidComment);
         const rejected = raw.length - valid.length;
-        if (channelActive && claudeBusy && valid.length > 0) {
+        if (channelActive && shouldBacklog() && valid.length > 0) {
           backlog.push(valid);
+          startBacklogPoller();
           console.error(
             `[bridge] batch accepted=${valid.length} rejected=${rejected} queued to backlog (depth ${backlog.length})`,
           );
@@ -655,6 +720,18 @@ function startHttpServer(listenPort: number): void {
           backlogDepth: backlog.length,
           backlogStashSizes: backlog.map((s) => s.length),
           claudeBusy,
+          hookBusy: isClaudeBusy(),
+          flagAge: (() => {
+            try {
+              const raw = readFileSync(STATE_FILE, "utf8");
+              const f = JSON.parse(raw) as { busyTs?: string };
+              return f.busyTs
+                ? Math.round((Date.now() - new Date(f.busyTs).getTime()) / 1000)
+                : null;
+            } catch {
+              return null;
+            }
+          })(),
           pid: process.pid,
           isAdopted,
         });
@@ -678,6 +755,12 @@ function startHttpServer(listenPort: number): void {
       }),
     );
   }
+  atomicWriteStateFile({
+    port,
+    bridgePid: process.pid,
+    claudePid: process.ppid,
+    started: new Date().toISOString(),
+  });
 }
 
 function stopHttpServer(): void {
@@ -759,15 +842,13 @@ if (!skipMcp && !skipStateFile) {
       if (res && res.ok) {
         port = state.port;
         isAdopted = true;
-        // Write a per-PID state file so the statusline shows the adopted port.
-        writeFileSync(
-          STATE_FILE,
-          JSON.stringify({
-            port,
-            pid: process.pid,
-            started: new Date().toISOString(),
-          }),
-        );
+        // Write a per-session state file so the statusline shows the adopted port.
+        atomicWriteStateFile({
+          port,
+          bridgePid: process.pid,
+          claudePid: process.ppid,
+          started: new Date().toISOString(),
+        });
         console.error(
           `[bridge] adopted existing HTTP server on port ${port} (orphan PID ${state.pid ?? "?"})`,
         );
