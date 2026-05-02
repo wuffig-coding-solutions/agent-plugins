@@ -35,28 +35,12 @@ Insert the following block **just before** the final `printf` line that outputs 
 
 ```bash
 # ── Website Commenter bridge indicator ─────────────────────────────────────────
-# Each bridge writes /tmp/claude-wc-bridge-{pid}.json. Find the one that belongs
-# to this Claude Code session by walking up to our parent and finding its bridge child.
 wc_indicator=""
-wc_parent=$PPID
-# Enumerate per-PID state files, skip dead processes, collect live ports
+wc_sf="/tmp/claude-wc-bridge-${PPID}.json"
 wc_ports=""
-for wc_sf in /tmp/claude-wc-bridge-*.json; do
-  [ -f "$wc_sf" ] || continue
-  wc_pid=$(jq -r '.pid // ""' "$wc_sf" 2>/dev/null)
-  [ -z "$wc_pid" ] && continue
-  if kill -0 "$wc_pid" 2>/dev/null; then
-    # Check if this bridge is a sibling (same parent = same Claude Code session)
-    wc_bridge_ppid=$(ps -o ppid= -p "$wc_pid" 2>/dev/null | tr -d ' ')
-    if [ "$wc_bridge_ppid" = "$wc_parent" ]; then
-      wc_ports=$(jq -r '.port // ""' "$wc_sf" 2>/dev/null)
-      break
-    fi
-  else
-    # Stale file — bridge exited without cleanup
-    rm -f "$wc_sf"
-  fi
-done
+if [ -f "$wc_sf" ]; then
+  wc_ports=$(jq -r '.port // ""' "$wc_sf" 2>/dev/null)
+fi
 if [ -n "$wc_ports" ]; then
   wc_indicator=$(printf '\033[36mwc:%s\033[0m   ' "$wc_ports")
 fi
