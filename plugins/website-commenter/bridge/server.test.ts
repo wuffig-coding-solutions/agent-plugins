@@ -170,6 +170,34 @@ test("OPTIONS returns CORS headers", async () => {
   expect(res.headers.get("access-control-allow-origin")).toBe("*");
 });
 
+test("POST /claim-session updates channelActive in /health", async () => {
+  // Server starts with channelActive:false (WC_NO_MCP=1)
+  const before = await (await fetch(`${BASE}/health`)).json();
+  expect(before.channelActive).toBe(false);
+
+  // Claim session as active
+  const claim = await fetch(`${BASE}/claim-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ active: true }),
+  });
+  expect(claim.status).toBe(200);
+  expect((await claim.json()).ok).toBe(true);
+  expect((await (await fetch(`${BASE}/health`)).json()).channelActive).toBe(
+    true,
+  );
+
+  // Release session
+  await fetch(`${BASE}/claim-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ active: false }),
+  });
+  expect((await (await fetch(`${BASE}/health`)).json()).channelActive).toBe(
+    false,
+  );
+});
+
 // ── Hook-driven busy state tests ──────────────────────────────────────────────
 // The STATE_FILE is keyed by the server's process.ppid.
 // Since the server is a child of the test process, server.ppid === test process.pid.

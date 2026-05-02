@@ -122,6 +122,11 @@ const skipMcp = process.env.WC_NO_MCP === "1";
 let channelActive = false;
 let mcpServer: Server | null = null;
 
+// Set by POST /claim-session when a new bridge session adopts this HTTP server
+// as an orphan. Overrides channelActive in the health response so the adopting
+// session's live MCP state is reflected instead of the orphan's stale false.
+let sessionActive: boolean | null = null;
+
 if (!skipMcp) {
   mcpServer = new Server(
     { name: "website-commenter", version: "1.0.0" },
@@ -591,6 +596,16 @@ function startHttpServer(listenPort: number): void {
       if (req.method === "OPTIONS")
         return new Response(null, { status: 204, headers: CORS });
 
+      if (req.method === "POST" && pathname === "/claim-session") {
+        try {
+          const body = (await req.json()) as { active?: boolean };
+          if (typeof body.active === "boolean") sessionActive = body.active;
+          return json({ ok: true });
+        } catch {
+          return fail("Invalid JSON");
+        }
+      }
+
       if (req.method === "GET" && pathname === "/health")
         return json({
           status: "ok",
@@ -598,7 +613,7 @@ function startHttpServer(listenPort: number): void {
           backlogDepth: backlog.length,
           claudeBusy,
           port,
-          channelActive,
+          channelActive: sessionActive !== null ? sessionActive : channelActive,
           hookBusy: isClaudeBusy(),
           flagAge: (() => {
             try {
@@ -712,7 +727,9 @@ function startHttpServer(listenPort: number): void {
 
       if (req.method === "GET" && pathname === "/debug")
         return json({
-          channelActive,
+          channelActive: sessionActive !== null ? sessionActive : channelActive,
+          channelActiveRaw: channelActive,
+          sessionActive,
           mcpServerExists: mcpServer !== null,
           skipMcp,
           lastNotification: lastNotificationResult,
@@ -852,6 +869,14 @@ if (!skipMcp && !skipStateFile) {
         console.error(
           `[bridge] adopted existing HTTP server on port ${port} (orphan PID ${state.pid ?? "?"})`,
         );
+        // Tell the orphan that a live session has adopted it, so its /health
+        // reports channelActive:true even though its own MCP transport is gone.
+        fetch(`http://localhost:${port}/claim-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ active: true }),
+          signal: AbortSignal.timeout(1000),
+        }).catch(() => {});
       } else {
         // Stale persistent state — the old server is gone.
         unlinkSync(PERSISTENT_STATE_FILE);
