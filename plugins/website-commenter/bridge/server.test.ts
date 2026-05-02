@@ -21,7 +21,7 @@ afterAll(() => {
 
 beforeEach(async () => {
   // Reset store between tests
-  await fetch(`${BASE}/comments`, { method: "DELETE" });
+  await fetch(`${BASE}/comment`, { method: "DELETE" });
 });
 
 const validComment = {
@@ -62,17 +62,17 @@ test("GET /health returns ok with port", async () => {
   expect(body.port).toBe(TEST_PORT);
 });
 
-test("GET /comments returns empty array initially", async () => {
-  const res = await fetch(`${BASE}/comments`);
+test("GET /comment returns empty array initially", async () => {
+  const res = await fetch(`${BASE}/comment`);
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual([]);
 });
 
-test("POST /comments accepts a valid comment", async () => {
-  const res = await fetch(`${BASE}/comments`, {
+test("POST /comment accepts a valid comment", async () => {
+  const res = await fetch(`${BASE}/comment`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(validComment),
+    body: JSON.stringify({ type: "send-comment", comment: validComment }),
   });
   expect(res.status).toBe(201);
   const body = await res.json();
@@ -80,45 +80,57 @@ test("POST /comments accepts a valid comment", async () => {
   expect(body.id).toBe("c1");
 });
 
-test("POST /comments rejects comment missing required fields", async () => {
-  const res = await fetch(`${BASE}/comments`, {
+test("POST /comment rejects wrong type field", async () => {
+  const res = await fetch(`${BASE}/comment`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: "x", url: "https://example.com" }),
+    body: JSON.stringify({ type: "wrong", comment: validComment }),
   });
   expect(res.status).toBe(400);
 });
 
-test("GET /comments returns previously posted comment", async () => {
-  await fetch(`${BASE}/comments`, {
+test("POST /comment rejects comment missing required fields", async () => {
+  const res = await fetch(`${BASE}/comment`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(validComment),
+    body: JSON.stringify({
+      type: "send-comment",
+      comment: { id: "x", url: "https://example.com" },
+    }),
   });
-  const res = await fetch(`${BASE}/comments`);
+  expect(res.status).toBe(400);
+});
+
+test("GET /comment returns previously posted comment", async () => {
+  await fetch(`${BASE}/comment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "send-comment", comment: validComment }),
+  });
+  const res = await fetch(`${BASE}/comment`);
   const body = await res.json();
   expect(body).toHaveLength(1);
   expect(body[0].id).toBe("c1");
 });
 
-test("DELETE /comments clears the store", async () => {
-  await fetch(`${BASE}/comments`, {
+test("DELETE /comment clears the store", async () => {
+  await fetch(`${BASE}/comment`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(validComment),
+    body: JSON.stringify({ type: "send-comment", comment: validComment }),
   });
-  const del = await fetch(`${BASE}/comments`, { method: "DELETE" });
+  const del = await fetch(`${BASE}/comment`, { method: "DELETE" });
   expect(del.status).toBe(200);
   expect((await del.json()).cleared).toBe(1);
-  expect(await (await fetch(`${BASE}/comments`)).json()).toHaveLength(0);
+  expect(await (await fetch(`${BASE}/comment`)).json()).toHaveLength(0);
 });
 
-test("POST /comments/batch accepts valid, rejects invalid entries", async () => {
+test("POST /comment-batch accepts valid, rejects invalid entries", async () => {
   const bad = { id: "bad" }; // missing required fields
-  const res = await fetch(`${BASE}/comments/batch`, {
+  const res = await fetch(`${BASE}/comment-batch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify([validComment, bad]),
+    body: JSON.stringify({ type: "send-batch", comments: [validComment, bad] }),
   });
   expect(res.status).toBe(201);
   const body = await res.json();
@@ -126,8 +138,26 @@ test("POST /comments/batch accepts valid, rejects invalid entries", async () => 
   expect(body.rejected).toBe(1);
 });
 
+test("POST /comment-batch rejects wrong type field", async () => {
+  const res = await fetch(`${BASE}/comment-batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "wrong", comments: [validComment] }),
+  });
+  expect(res.status).toBe(400);
+});
+
+test("POST /comment-batch rejects missing comments array", async () => {
+  const res = await fetch(`${BASE}/comment-batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "send-batch" }),
+  });
+  expect(res.status).toBe(400);
+});
+
 test("OPTIONS returns CORS headers", async () => {
-  const res = await fetch(`${BASE}/comments`, { method: "OPTIONS" });
+  const res = await fetch(`${BASE}/comment`, { method: "OPTIONS" });
   expect(res.status).toBe(204);
   expect(res.headers.get("access-control-allow-origin")).toBe("*");
 });

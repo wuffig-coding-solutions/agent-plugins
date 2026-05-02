@@ -89,9 +89,15 @@ const json = (data: unknown, status = 200): Response =>
 const fail = (msg: string, status = 400): Response =>
   json({ error: msg }, status);
 
-// ── In-memory store ───────────────────────────────────────────────────────────
+// ── In-memory store + backlog ─────────────────────────────────────────────────
 
 const store: WebsiteComment[] = [];
+
+// Stash queue: each entry is a batch of comments that arrived while Claude was busy.
+// Only populated when channelActive is true (notifications are live).
+const backlog: WebsiteComment[][] = [];
+let claudeBusy = false;
+let busyTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── MCP server + channel notifications ───────────────────────────────────────
 
@@ -127,7 +133,7 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
       {
         name: "get_website_comments",
         description:
-          "Returns all pending website comments from the browser extension. " +
+          "Returns all pending website comments from the browser extension, plus backlog queue status. " +
           "Fallback for when channel notifications are unavailable.",
         inputSchema: {
           type: "object",
@@ -143,7 +149,7 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
       {
         name: "clear_website_comments",
         description:
-          "Clears pending website comments. Call after processing to acknowledge receipt.",
+          "Clears pending website comments and auto-delivers the next queued stash from the backlog if one is waiting. Call after processing to acknowledge receipt.",
         inputSchema: {
           type: "object",
           properties: {
@@ -221,35 +227,61 @@ Use get_website_comments to poll manually. Use clear_website_comments after proc
             `HTML: ${c.element.outerHTML.substring(0, 300)}`,
         )
         .join("\n\n");
+      const backlogInfo =
+        backlog.length > 0
+          ? `\n\n[Backlog: ${backlog.length} stash(es) queued — ${backlog.reduce((n, s) => n + s.length, 0)} comment(s) total]`
+          : "";
       return {
         content: [
-          { type: "text", text: `${comments.length} comment(s):\n\n${text}` },
+          {
+            type: "text",
+            text: `${comments.length} comment(s):\n\n${text}${backlogInfo}`,
+          },
         ],
       };
     }
 
     if (name === "clear_website_comments") {
       const ids = Array.isArray(args?.ids) ? (args.ids as string[]) : undefined;
+      let cleared: number;
       if (ids !== undefined) {
         const idSet = new Set(ids);
         const before = store.length;
         for (let i = store.length - 1; i >= 0; i--) {
           if (idSet.has(store[i].id)) store.splice(i, 1);
         }
-        const cleared = before - store.length;
+        cleared = before - store.length;
+      } else {
+        cleared = store.length;
+        store.splice(0, store.length);
+      }
+
+      setIdle();
+
+      if (store.length === 0 && backlog.length > 0) {
+        const stashCount = backlog.length;
+        const nextStashSize = backlog[0].length;
+        await flushBacklog();
+        const still = backlog.length;
+        const suffix =
+          still > 0 ? ` ${still} stash(es) still queued.` : " Backlog empty.";
         return {
           content: [
             {
               type: "text",
-              text: `Cleared ${cleared} comment(s). ${store.length} remaining.`,
+              text: `Cleared ${cleared} comment(s). Delivering next stash (${nextStashSize} comment(s)) from backlog (was ${stashCount}).${suffix}`,
             },
           ],
         };
       }
-      const count = store.length;
-      store.splice(0, store.length);
+
+      const parts = [
+        `Cleared ${cleared} comment(s). ${store.length} remaining.`,
+      ];
+      if (backlog.length > 0)
+        parts.push(`Backlog: ${backlog.length} stash(es) pending.`);
       return {
-        content: [{ type: "text", text: `Cleared all ${count} comment(s).` }],
+        content: [{ type: "text", text: parts.join(" ") }],
       };
     }
 
@@ -440,6 +472,48 @@ async function pushBatchChannelNotification(
   }
 }
 
+// ── Backlog helpers ────────────────────────────────────────────────────────────
+
+const BUSY_TIMEOUT_MS = 120_000;
+
+function setBusy(): void {
+  claudeBusy = true;
+  if (busyTimer) clearTimeout(busyTimer);
+  busyTimer = setTimeout(async () => {
+    console.error("[bridge] busy timeout — forcing idle, flushing backlog");
+    busyTimer = null;
+    claudeBusy = false;
+    await flushBacklog();
+  }, BUSY_TIMEOUT_MS);
+}
+
+function setIdle(): void {
+  claudeBusy = false;
+  if (busyTimer) {
+    clearTimeout(busyTimer);
+    busyTimer = null;
+  }
+}
+
+async function flushBacklog(): Promise<void> {
+  if (claudeBusy || backlog.length === 0) return;
+  const stash = backlog.shift()!;
+  if (stash.length === 0) {
+    await flushBacklog();
+    return;
+  }
+  for (const c of stash) store.push(c);
+  console.error(
+    `[bridge] flushing stash: ${stash.length} comment(s), ${backlog.length} remaining in backlog`,
+  );
+  if (stash.length === 1) {
+    await pushChannelNotification(stash[0]);
+  } else {
+    await pushBatchChannelNotification(stash);
+  }
+  setBusy();
+}
+
 // ── Port state ────────────────────────────────────────────────────────────────
 // Port is 0 until connect_bridge is called. The HTTP server does NOT auto-start.
 
@@ -470,55 +544,104 @@ function startHttpServer(listenPort: number): void {
         return json({
           status: "ok",
           commentCount: store.length,
+          backlogDepth: backlog.length,
+          claudeBusy,
           port,
           channelActive,
         });
 
-      if (req.method === "GET" && pathname === "/comments")
+      if (req.method === "GET" && pathname === "/comment")
         return json(store.slice());
 
-      if (req.method === "DELETE" && pathname === "/comments") {
+      if (req.method === "DELETE" && pathname === "/comment") {
         const count = store.length;
         store.splice(0, store.length);
         return json({ cleared: count });
       }
 
-      if (req.method === "POST" && pathname === "/comments") {
+      if (req.method === "POST" && pathname === "/comment") {
         let body: unknown;
         try {
           body = await req.json();
         } catch {
           return fail("Invalid JSON");
         }
-        if (!isValidComment(body))
+        if (
+          typeof body !== "object" ||
+          body === null ||
+          (body as Record<string, unknown>).type !== "send-comment"
+        )
+          return fail(
+            'Expected { "type": "send-comment", "comment": { ... } }',
+          );
+        const comment = (body as Record<string, unknown>).comment;
+        if (!isValidComment(comment))
           return fail("Invalid comment shape — missing required fields");
-        store.push(body);
-        console.error(`[bridge] comment id=${body.id} url=${body.url}`);
-        await pushChannelNotification(body);
+        if (channelActive && claudeBusy) {
+          backlog.push([comment]);
+          console.error(
+            `[bridge] comment id=${comment.id} queued to backlog (depth ${backlog.length})`,
+          );
+          return json(
+            {
+              ok: true,
+              id: comment.id,
+              queued: true,
+              backlogDepth: backlog.length,
+            },
+            202,
+          );
+        }
+        store.push(comment);
+        console.error(`[bridge] comment id=${comment.id} url=${comment.url}`);
+        await pushChannelNotification(comment);
+        if (channelActive) setBusy();
         return json(
-          { ok: true, id: body.id, notification: lastNotificationResult },
+          { ok: true, id: comment.id, notification: lastNotificationResult },
           201,
         );
       }
 
-      if (req.method === "POST" && pathname === "/comments/batch") {
+      if (req.method === "POST" && pathname === "/comment-batch") {
         let body: unknown;
         try {
           body = await req.json();
         } catch {
           return fail("Invalid JSON");
         }
-        if (!Array.isArray(body)) return fail("Expected array of comments");
-        const valid = (body as unknown[]).filter(isValidComment);
-        const rejected = body.length - valid.length;
+        if (
+          typeof body !== "object" ||
+          body === null ||
+          (body as Record<string, unknown>).type !== "send-batch" ||
+          !Array.isArray((body as Record<string, unknown>).comments)
+        )
+          return fail('Expected { "type": "send-batch", "comments": [ ... ] }');
+        const raw = (body as Record<string, unknown>).comments as unknown[];
+        const valid = raw.filter(isValidComment);
+        const rejected = raw.length - valid.length;
+        if (channelActive && claudeBusy && valid.length > 0) {
+          backlog.push(valid);
+          console.error(
+            `[bridge] batch accepted=${valid.length} rejected=${rejected} queued to backlog (depth ${backlog.length})`,
+          );
+          return json(
+            {
+              ok: true,
+              accepted: valid.length,
+              rejected,
+              queued: true,
+              backlogDepth: backlog.length,
+            },
+            202,
+          );
+        }
         for (const c of valid) store.push(c);
         console.error(
           `[bridge] batch accepted=${valid.length} rejected=${rejected}`,
         );
-        // Await the notification so it is guaranteed to be sent before the
-        // response is returned. Fire-and-forget was unreliable in Bun's
-        // request lifecycle.
+        // Await so the notification is guaranteed sent before the response returns.
         await pushBatchChannelNotification(valid);
+        if (channelActive && valid.length > 0) setBusy();
         return json({ ok: true, accepted: valid.length, rejected }, 201);
       }
 
@@ -529,6 +652,9 @@ function startHttpServer(listenPort: number): void {
           skipMcp,
           lastNotification: lastNotificationResult,
           storeCount: store.length,
+          backlogDepth: backlog.length,
+          backlogStashSizes: backlog.map((s) => s.length),
+          claudeBusy,
           pid: process.pid,
           isAdopted,
         });
